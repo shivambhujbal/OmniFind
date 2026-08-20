@@ -1,0 +1,7 @@
+# PaddleOCR GPU stack -- installed separately because it is large, CUDA-specific,
+# and has no CPU-only reason to exist here (Tesseract covers the CPU path).
+#
+# On the CUDA dev/target machine:
+#   pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+#   pip install -r sidecar/requirements-ocr-gpu.txt
+paddleocr==3.0.0

@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local config & data
+.env
+data/
+models/
+*.db
+*.db-journal
+
+# Build output
+build/
+dist/
+src-tauri/target/
+frontend/node_modules/
+frontend/dist/
+
+# OS
+Thumbs.db
+desktop.ini

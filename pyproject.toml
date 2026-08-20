@@ -1,0 +1,57 @@
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+# Alembic-generated; leave them exactly as the tool wrote them.
+extend-exclude = "sidecar/app/db/migrations/versions"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["sidecar", "streamlit_app", "scripts", "tests"]
+# Alembic writes these; reformatting them creates noise in every migration diff.
+extend-exclude = ["sidecar/app/db/migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "ANN"]
+ignore = [
+    "ANN401",
+    # `Depends(...)` in a parameter default is how FastAPI declares dependencies.
+    # The rule exists for mutable defaults; here the call is the API.
+    "B008",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests", "streamlit_app"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN"]
+"streamlit_app/*" = ["ANN"]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "sidecar"
+strict = true
+warn_unused_ignores = false
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = [
+    "open_clip.*",
+    "paddleocr.*",
+    "pytesseract.*",
+    "fitz.*",
+    "docx.*",
+    "streamlit.*",
+    "tokenizers.*",
+    "accelerate.*",
+    "safetensors.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+pythonpath = ["sidecar"]
+testpaths = ["tests"]
+markers = [
+    "slow: needs the vendored model weights; skips when they are absent",
+    "model(name): which heavy model this test needs resident (text|clip|caption)",
+]

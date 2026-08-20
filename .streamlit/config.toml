@@ -1,0 +1,24 @@
+# Streamlit is the temporary dev frontend, but "no network calls" is a hard
+# constraint for this project, so it has to hold here too.
+#
+# Streamlit posts usage telemetry to webhooks.fivetran.com on every session.
+# That is an outbound connection carrying app usage off the machine, which is
+# exactly what this app promises not to do. Verified in the browser's resource
+# timings before this file existed.
+[browser]
+gatherUsageStats = false
+serverAddress = "127.0.0.1"
+
+[server]
+# Loopback only, matching the sidecar's constraint.
+address = "127.0.0.1"
+headless = true
+# The backend enforces its own ceiling (settings.max_upload_mb); keep them equal
+# so a file is not accepted here and then rejected there.
+maxUploadSize = 200
+
+[runner]
+magicEnabled = false
+
+[theme]
+base = "dark"

@@ -1,0 +1,12 @@
+-r sidecar/requirements.txt
+
+# frontend for the current phase (Tauri + React comes in phase 6)
+streamlit==1.41.1
+requests==2.32.3
+
+# tooling
+ruff==0.9.6
+black==25.1.0
+mypy==1.15.0
+pytest==8.3.4
+types-requests==2.32.0.20241016
