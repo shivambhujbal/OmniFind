@@ -45,6 +45,10 @@ class VectorHit:
     score: float
     collection: str
     payload: dict[str, Any]
+    # True for a literal keyword match on an identifier rather than a vector
+    # hit. Such a match is evidence independent of cosine, so ranking exempts
+    # it from the similarity floor. See search/lexical.py.
+    exact: bool = False
 
 
 def get_client() -> QdrantClient:
@@ -211,6 +215,37 @@ def _search(
         )
         for point in results
     ]
+
+
+def similarities_for(
+    collection: str, ids: list[int], query_vector: NDArray[np.float32]
+) -> dict[int, float]:
+    """Cosine of specific stored points against a query vector.
+
+    Used for hits found by keyword rather than by vector search: they have no
+    similarity of their own, and showing them without one -- or with a made-up
+    number -- would be worse than looking it up.
+    """
+    if not ids:
+        return {}
+
+    import numpy as np
+
+    try:
+        points = get_client().retrieve(
+            collection_name=collection, ids=[int(i) for i in ids], with_vectors=True
+        )
+    except Exception as exc:  # noqa: BLE001 - absent points are not an error here
+        log.debug("could not retrieve vectors for %s: %s", ids, exc)
+        return {}
+
+    # Stored vectors are L2-normalised at write time, so a dot product is the
+    # cosine.
+    return {
+        int(point.id): float(np.dot(np.asarray(point.vector, dtype=np.float32), query_vector))
+        for point in points
+        if point.vector is not None
+    }
 
 
 def delete_points(collection: str, ids: list[int]) -> None:

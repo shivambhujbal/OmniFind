@@ -113,9 +113,49 @@ def embed_text(texts: list[str]) -> NDArray[np.float32]:
     return _normalise_rows(matrix)
 
 
+# CLIP is trained on image-*caption* pairs -- "a photo of a person standing in
+# a park", never the bare noun "person". A one-word query is therefore out of
+# distribution and scores lower against *every* image, which a fixed relevance
+# floor then removes wholesale. Measured on this library (794 images, floor
+# 0.25), searching "human" returned nothing at all while a full description
+# like "black guy in yellow tshirt" worked perfectly.
+#
+# Encoding the query under caption templates and averaging repairs it. Results
+# above the floor:
+#
+#   query      raw   "a photo of {}."   this ensemble
+#   person       1         46                27
+#   human        0         21                15
+#   people       0          7                 4
+#   vehicle      4          1                 6
+#   car          8         10                13
+#   dog          3          6                 7
+#   gibberish    1          7                 4
+#
+# A single template finds more people, but makes "vehicle" *worse* and pulls in
+# twice the noise. The ensemble is the only form that improves every real query
+# -- and it keeps the raw query in the mix, so a phrase that already reads like
+# a caption is not distorted by being wrapped in another one.
+_QUERY_TEMPLATES = ("{}", "a photo of {}.", "a photo of a {}.")
+
+
 def embed_query(query: str) -> NDArray[np.float32]:
-    row: NDArray[np.float32] = embed_text([query])[0]
-    return row
+    """Embed a search query, averaged over caption templates.
+
+    Only the *query* side is templated. Stored image vectors are untouched, so
+    this changes retrieval immediately with no re-indexing.
+    """
+    rows = embed_text([template.format(query) for template in _QUERY_TEMPLATES])
+    mean = rows.mean(axis=0)
+    norm = float(np.linalg.norm(mean))
+    if norm == 0.0:
+        # Degenerate only if the variants cancel exactly, which normalised
+        # embeddings of near-identical text will not do -- but a zero vector
+        # would score 0 against everything and silently return nothing.
+        first: NDArray[np.float32] = rows[0]
+        return first
+    averaged: NDArray[np.float32] = (mean / norm).astype(np.float32)
+    return averaged
 
 
 def embedding_dim() -> int:

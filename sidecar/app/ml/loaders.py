@@ -144,6 +144,36 @@ def _evict_other_heavy_models(keeping: str) -> None:
         log.info("evicted %s to make room for %s (low-memory mode)", ", ".join(evicted), keeping)
 
 
+def release_heavy_model(name: str) -> bool:
+    """Free one heavy model as soon as its work is finished.
+
+    Eviction alone defers the free to the *next* load, so the memory is handed
+    back and asked for again microseconds later. On this machine that is where
+    the process dies: with a 19.2GB commit limit and ~5GB free, releasing
+    moondream2 (4.1GB) and immediately building ViT-H/14 (2.9GB peak) exceeded
+    the limit part-way through construction -- the sidecar vanished with no
+    traceback, mid-log-line, straight after "evicted moondream to make room for
+    clip".
+
+    Releasing at the end of the pass that needed the model puts minutes between
+    the free and the next allocation instead of microseconds, which is enough
+    for the OS to reclaim the commit. Costs an ~8s reload per captioned file
+    against ~390s of captioning: about 2%.
+    """
+    if not settings.ml_low_memory:
+        return False
+
+    loader = _HEAVY_LOADERS.get(_LOADER_KEYS.get(name, name))
+    if loader is None or not loader.cache_info().currsize:
+        return False
+
+    loader.cache_clear()
+    gc.collect()
+    empty_device_cache()
+    log.info("released %s after use (low-memory mode)", name)
+    return True
+
+
 def _require_dir(name: str, path: Path, *required_files: str) -> Path:
     if not path.is_dir():
         raise ModelNotAvailableError(name, path)
@@ -667,6 +697,12 @@ _HEAVY_LOADERS: dict[str, Any] = {
     "moondream": load_moondream,
     "blip2": load_blip2,
 }
+
+# `settings.captioner` names an engine; `_HEAVY_LOADERS` keys name a loader.
+# They are nearly the same strings, which is exactly why this is written down
+# rather than derived -- "moondream2" -> "moondream" but "blip2" -> "blip2",
+# so any rule that strips the digit silently frees the wrong model, or none.
+_LOADER_KEYS: dict[str, str] = {"moondream2": "moondream", "blip2": "blip2"}
 
 # Everything that can hold significant memory, for reporting.
 _ALL_LARGE_LOADERS: dict[str, Any] = {"text": load_text_encoder, **_HEAVY_LOADERS}

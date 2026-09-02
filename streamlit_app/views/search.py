@@ -67,9 +67,16 @@ def _location(result: dict[str, Any]) -> str:
     parts = [MATCH_LABEL.get(result["match_kind"], result["match_kind"])]
     if result.get("page_number"):
         parts.append(f"page {result['page_number']}")
-    similarity = result.get("similarity")
-    if similarity is not None:
-        parts.append(f"{_strength(similarity)} match ({similarity:.2f})")
+
+    if result.get("exact"):
+        # Describing this by its cosine would be actively misleading: the text
+        # was found literally, and the model's low opinion of a digit string
+        # says nothing about whether this is the right document.
+        parts.append("exact match")
+    else:
+        similarity = result.get("similarity")
+        if similarity is not None:
+            parts.append(f"{_strength(similarity)} match ({similarity:.2f})")
     return " · ".join(parts)
 
 
@@ -164,7 +171,7 @@ def render(client: ApiClient) -> None:
         on_change=_reset_page,
     )
 
-    images_on = status.get("image_understanding", True)
+    images_on = status.get("image_search", True)
     filters, options = st.columns([2, 3])
 
     kind_label = filters.radio(
@@ -174,7 +181,7 @@ def render(client: ApiClient) -> None:
         key="search_kind",
         on_change=_reset_page,
         help=(
-            "Images can only be matched by their text (OCR) while image " "understanding is off."
+            "Images can only be matched by their text (OCR) while image search is off."
             if not images_on
             else "Filter by the kind of file a match came from."
         ),

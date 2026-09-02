@@ -82,17 +82,21 @@ class Settings(BaseSettings):
     clip_model_hub_id: str = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
     clip_embedding_dim: int = 1024
 
-    # Image *understanding* -- captions and CLIP image vectors -- on or off.
+    # Image search: CLIP vectors over page images and photographs, plus the
+    # image lane of a query. Measured at **2.19s per image** batched on this
+    # CPU -- slow, but perfectly usable from a background queue.
+    enable_image_search: bool = True
+
+    # Captioning: a written description of each image, from moondream2.
+    # Measured at **~390s per image** on the same CPU. That is 178x the cost of
+    # the CLIP vector above, which is why these are two flags and not one: a
+    # CPU-only machine can afford image *search* but not captions, and a single
+    # switch forced it to give up both.
     #
-    # OCR is deliberately NOT covered by this flag. Reading text out of a scan
-    # takes about a second with Tesseract and is the difference between a
-    # scanned document being searchable and being invisible, so it belongs to
-    # the document path, not the image path.
-    #
-    # What this turns off is the expensive half: captioning one image with
-    # moondream2 costs ~390s on CPU, and CLIP adds a 2.9GB model to the working
-    # set. On a GPU both are ~1s and this stays on.
-    enable_image_understanding: bool = True
+    # OCR is covered by NEITHER flag. Reading text out of a scan takes about a
+    # second with Tesseract and is the difference between a scanned document
+    # being searchable and being invisible, so it belongs to the document path.
+    enable_captioning: bool = True
 
     captioner: Captioner = "moondream2"
     moondream_hub_id: str = "vikhyatk/moondream2"
@@ -160,6 +164,17 @@ class Settings(BaseSettings):
     # one that reaches 0.79, where a fixed margin would behave differently for
     # each. Never applies to the top result.
     relative_score_floor: float = 0.95
+
+    # The same idea for the image space, but a different number, because the
+    # two models spread their scores differently. bge runs 0.42-0.79, so 0.95
+    # of the best hit is a wide band. CLIP compresses everything into roughly
+    # 0.25-0.36, so 0.95 of a 0.280 top hit is a cutoff of 0.266 -- a band
+    # 0.014 wide, which threw away most of a good result set: searching
+    # "person" retrieved 27 matching images and displayed 4.
+    #
+    # The absolute floor (min_image_score) is what removes non-answers here;
+    # this only trims the tail below it.
+    image_relative_score_floor: float = 0.90
 
     # Above this, the best hit is a confident answer; between `min_text_score`
     # and this, it is "the closest thing I have" and the UI says so.
@@ -318,8 +333,27 @@ class Settings(BaseSettings):
         os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(self.models_dir / "paddlex"))
 
 
+# Retired in favour of the two flags above. `extra="ignore"` would drop it
+# silently, which would quietly re-enable whichever half the user meant to keep
+# off -- so say so instead. Delete once no machine carries it.
+_RETIRED_ENV = {
+    "FS_ENABLE_IMAGE_UNDERSTANDING": "FS_ENABLE_IMAGE_SEARCH and FS_ENABLE_CAPTIONING",
+}
+
+
+def _reject_retired_env() -> None:
+    for name, replacement in _RETIRED_ENV.items():
+        if name in os.environ:
+            raise RuntimeError(
+                f"{name} is no longer read. Image search and captioning are now "
+                f"separate settings, because on CPU one costs 2s per image and the "
+                f"other 390s. Replace it with {replacement}."
+            )
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
+    _reject_retired_env()
     return Settings()
 
 

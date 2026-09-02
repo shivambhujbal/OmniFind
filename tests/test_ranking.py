@@ -176,3 +176,47 @@ def test_image_results_use_the_caption_as_the_snippet() -> None:
     result = fuse(text_hits=[], image_hits=[image_hit(10, 0.3)])[0]
     assert result.snippet == "a picture 10"
     assert result.asset_id == 10
+
+
+# --- the relevance floor spans two incomparable scales ------------------
+
+
+def test_a_good_image_match_survives_alongside_unrelated_text() -> None:
+    """The bug that made image search look broken.
+
+    Searching "a red Mercedes car" matched the right photograph at 0.308 and
+    then threw it away, because unrelated text about bioluminescence scored
+    0.466 and a single relative floor set the bar at 0.44. bge and CLIP
+    similarities are not comparable -- that is the whole reason results are
+    fused by rank -- so one cutoff taken from whichever space ranked first
+    silently deletes the other space entirely.
+    """
+    text = [text_hit(1, 0.466, file_id=1), text_hit(2, 0.450, file_id=3)]
+    images = [image_hit(10, 0.308, file_id=2)]
+
+    results = fuse(text, images)
+    kinds = {r.file_kind for r in results}
+
+    assert "image" in kinds, "a good CLIP match must not be filtered out by text scores"
+
+
+def test_the_floor_still_trims_a_weak_tail_within_each_space() -> None:
+    """Per-space must not mean 'no floor at all'."""
+    text = [text_hit(1, 0.80, file_id=1), text_hit(2, 0.42, file_id=2)]
+
+    results = fuse(text, [])
+    ids = {r.file_id for r in results}
+
+    assert 1 in ids
+    assert 2 not in ids, "0.42 against a 0.80 best is still the flat tail"
+
+
+def test_a_weak_image_is_trimmed_against_other_images() -> None:
+    """An image is judged against images, not given a free pass."""
+    images = [image_hit(10, 0.35, file_id=2), image_hit(11, 0.12, file_id=4)]
+
+    results = fuse([], images)
+    ids = {r.file_id for r in results}
+
+    assert 2 in ids
+    assert 4 not in ids, "0.12 against a 0.35 best is weak on CLIP's own scale"

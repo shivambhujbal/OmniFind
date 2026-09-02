@@ -13,12 +13,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from app.config import settings
+from app.db.session import session_scope
 from app.logging_conf import get_logger
 from app.ml import embeddings_clip, embeddings_text, loaders
+from app.search import lexical
 from app.search.ranking import SearchResult, fuse
 from app.vectors import store
+from app.vectors.store import VectorHit
+
+if TYPE_CHECKING:
+    import numpy as np
+    from numpy.typing import NDArray
 
 log = get_logger(__name__)
 
@@ -84,14 +92,21 @@ def search(
     # either -- without it there is no search worth returning, so that must
     # surface rather than degrade into image-only results that would look like a
     # complete answer.
-    text_hits = store.search_text(embeddings_text.embed_query(query), file_kinds=file_kinds)
+    query_vector = embeddings_text.embed_query(query)
+    text_hits = store.search_text(query_vector, file_kinds=file_kinds)
+
+    # Keyword search, fused as a third list. Dense vectors cannot find an exact
+    # identifier -- a reference number scores BELOW unrelated documents, because
+    # the model has no representation for a long digit string. See
+    # search/lexical.py.
+    keyword_hits = _keyword_hits(query, query_vector, file_kinds)
 
     image_hits = []
     searched_images = False
     # Searching the image collection for a documents-only query would be pure
     # waste: every hit would be filtered out again by kind.
     wants_images = include_images and kinds is not KindFilter.DOCUMENTS
-    if wants_images and settings.enable_image_understanding:
+    if wants_images and settings.enable_image_search:
         try:
             # A much shorter wait: image results are a bonus on top of text
             # results, so if the worker is busy it is better to return the text
@@ -106,7 +121,7 @@ def search(
             # Text results are still worth returning: degrade, do not fail.
             log.warning("image search unavailable: %s", exc)
 
-    ranked = fuse(text_hits, image_hits, limit=limit, group_by_file=group_by_file)
+    ranked = fuse(text_hits + keyword_hits, image_hits, limit=limit, group_by_file=group_by_file)
 
     total = len(ranked)
     page = max(1, page)
@@ -116,12 +131,14 @@ def search(
     results = ranked[start : start + page_size]
 
     log.info(
-        "query %r [%s] -> %d result(s) of %d (page %d)",
+        "query %r [%s] -> %d result(s) of %d (page %d; %d dense, %d keyword)",
         query,
         kinds.value,
         len(results),
         total,
         page,
+        len(text_hits),
+        len(keyword_hits),
     )
     return SearchResponse(
         query=query,
@@ -129,8 +146,63 @@ def search(
         text_candidates=len(text_hits),
         image_candidates=len(image_hits),
         searched_images=searched_images,
-        confident=bool(ranked) and ranked[0].similarity >= settings.confident_match_score,
+        # An exact identifier match is a confident answer whatever its cosine:
+        # the number was found, and the model's opinion of the number is not
+        # evidence about whether it is the right document.
+        confident=bool(ranked)
+        and (ranked[0].exact or ranked[0].similarity >= settings.confident_match_score),
         total=total,
         page=page,
         page_size=page_size,
     )
+
+
+def _keyword_hits(
+    query: str, query_vector: NDArray[np.float32], file_kinds: list[str] | None
+) -> list[VectorHit]:
+    """Literal matches, shaped like vector hits so they can be fused.
+
+    Their ``score`` is the real cosine looked up from the stored vector, not an
+    invented number -- and 0.0 when the chunk has no vector at all, which is
+    the honest value for a passage excluded from the semantic index.
+    """
+    with session_scope() as session:
+        hits = lexical.search(session, query, limit=settings.search_candidates)
+
+    if not hits:
+        return []
+
+    if file_kinds is not None:
+        allowed = set(file_kinds)
+        hits = [h for h in hits if h.payload.get("file_kind") in allowed]
+        if not hits:
+            return []
+
+    similarities = store.similarities_for(
+        settings.text_collection, [h.chunk_id for h in hits], query_vector
+    )
+
+    vector_hits = [
+        VectorHit(
+            point_id=hit.chunk_id,
+            score=similarities.get(hit.chunk_id, 0.0),
+            collection=settings.text_collection,
+            payload=hit.payload,
+            exact=hit.is_exact,
+        )
+        for hit in hits
+    ]
+
+    # An *identifier* hit stands on its own: the number was found, and the
+    # model's opinion of the number is not evidence. An ordinary-word hit is a
+    # different thing entirely -- it is an OR over the query's words, so
+    # "a red Mercedes car" matches every document containing "car", with no
+    # score floor of its own because it never went through the vector store.
+    # That flooded results with matches at 0.33 that the dense retriever had
+    # already rejected at 0.55, and they then set the relative floor and buried
+    # the genuine answers. Keyword hits on plain words have to clear the same
+    # bar as anything else.
+    if vector_hits and not vector_hits[0].exact:
+        vector_hits = [h for h in vector_hits if h.score >= settings.min_text_score]
+
+    return vector_hits

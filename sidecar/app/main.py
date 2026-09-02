@@ -43,9 +43,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Text analysis only -- no models, no file reads.
     with session_scope() as session:
         maintenance.reclassify_chunks(session)
+        maintenance.prune_image_vectors(session)
 
     ingest.requeue_unfinished()
     process.requeue_unprocessed()
+    process.requeue_uncaptioned()
     index.requeue_unindexed()
 
     yield

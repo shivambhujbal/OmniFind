@@ -168,7 +168,7 @@ def test_image_search_finds_a_photo_by_description(
     """
     import shutil
 
-    monkeypatch.setattr(settings, "enable_image_understanding", True)
+    monkeypatch.setattr(settings, "enable_image_search", True)
 
     from PIL import Image, ImageDraw
 

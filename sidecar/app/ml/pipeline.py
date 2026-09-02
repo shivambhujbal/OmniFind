@@ -34,11 +34,27 @@ log = get_logger(__name__)
 
 # Thumbnails are for display only -- OCRing or captioning a 400px copy of an
 # image we already processed at full size wastes minutes and adds nothing.
+# What the vision models *read*: OCR runs over every image a document
+# contains, because that is what makes a scan or a screenshotted table
+# searchable at all.
 PROCESSABLE_KINDS = (
     AssetKind.PAGE_IMAGE,
     AssetKind.EMBEDDED_IMAGE,
     AssetKind.SOURCE_IMAGE,
 )
+
+# What gets a CLIP vector: standalone image files only.
+#
+# Deliberately NOT the images inside documents. A figure in a PDF is already
+# reachable through the document's own text and through OCR of the figure
+# itself, so a CLIP vector adds a way to find it that duplicates one that
+# already works -- and it is not free. One 52-page slide deck in the dev
+# library extracts to 2054 embedded images: 75 minutes of CPU, 95% of the
+# whole backlog, for one file that OCR had already made searchable.
+#
+# Page renderings are excluded for the same reason: a page image is a picture
+# of text, and text is what bge and FTS5 already index well.
+CLIP_INDEXABLE_KINDS = (AssetKind.SOURCE_IMAGE,)
 
 
 @dataclass(frozen=True)
@@ -100,8 +116,21 @@ def process_file(session: Session, file_id: int) -> ProcessResult:
         # findable at all. Captioning is the part that costs minutes per image,
         # so it is gated.
         ocr_chunks = _run_ocr(session, file_row, assets)
-        if settings.enable_image_understanding:
-            captions = _run_captioning(session, file_row, assets)
+        if settings.enable_captioning:
+            # Only standalone image files, the same set that gets a CLIP
+            # vector. This is what makes captioning affordable at all on CPU:
+            # at ~390s each, describing the 2054 figures inside one slide deck
+            # is nine days of compute for pictures OCR had already read, while
+            # describing the handful of photographs a person actually adds is
+            # minutes. The expensive model is pointed at the images that have
+            # no other way in.
+            captionable = [a for a in assets if a.kind in CLIP_INDEXABLE_KINDS]
+            captions = _run_captioning(session, file_row, captionable)
+            # Hand the memory back now, while nothing else wants it. Waiting
+            # for the next eviction means freeing 4.1GB and allocating 2.9GB in
+            # the same instant, which is what killed the sidecar on the first
+            # search after a captioning run.
+            loaders.release_heavy_model(settings.captioner)
         else:
             log.debug(
                 "captioning disabled; %s indexed on its text alone",

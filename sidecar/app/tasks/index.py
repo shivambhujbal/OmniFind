@@ -18,6 +18,7 @@ from app.db.models import Asset, Chunk, File, ProcessingStatus
 from app.db.session import session_scope
 from app.logging_conf import get_logger
 from app.ml import indexing
+from app.ml.pipeline import CLIP_INDEXABLE_KINDS
 from app.tasks.queue import Job, Priority, task_queue
 
 log = get_logger(__name__)
@@ -60,10 +61,18 @@ def requeue_unindexed() -> int:
                 .distinct()
             ).all()
         )
-        if settings.enable_image_understanding:
+        if settings.enable_image_search:
+            # Same kind filter as the indexer. Without it every document
+            # holding an embedded image would be re-queued on every start,
+            # indexed to zero, and queued again on the next one.
             file_ids |= set(
                 session.scalars(
-                    select(Asset.file_id).where(Asset.clip_embedded.is_(False)).distinct()
+                    select(Asset.file_id)
+                    .where(
+                        Asset.clip_embedded.is_(False),
+                        Asset.kind.in_(CLIP_INDEXABLE_KINDS),
+                    )
+                    .distinct()
                 ).all()
             )
         # Only files whose content is final; anything earlier gets indexed when

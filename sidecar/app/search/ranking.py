@@ -55,6 +55,11 @@ class SearchResult:
     # so per-file scoring can tell "matched in both spaces" from "matched twice
     # in one".
     source_collection: str = ""
+    # True when this passage was found by literal keyword match on an
+    # identifier (a reference number, a code). Such a hit is evidence of a
+    # different kind from a cosine score, so it is exempt from the similarity
+    # floor and the weak-tail trim -- see `drop_weak_tail`.
+    exact: bool = False
     # Every passage that matched in this file, best first. The UI shows the
     # first and can expand the rest.
     supporting: list[SearchResult] = field(default_factory=list)
@@ -72,6 +77,7 @@ class SearchResult:
             "snippet": self.snippet,
             "chunk_id": self.chunk_id,
             "asset_id": self.asset_id,
+            "exact": self.exact,
             "supporting": [s.as_dict() for s in self.supporting],
         }
 
@@ -106,16 +112,35 @@ def reciprocal_rank_fusion(
 
     scores: dict[tuple[str, int], float] = {}
     best_hit: dict[tuple[str, int], VectorHit] = {}
+    exact_keys: set[tuple[str, int]] = set()
 
     for hits in result_lists:
         for rank, hit in enumerate(hits, start=1):
             key = (hit.collection, hit.point_id)
             scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank)
-            # A point appears once per list, so first sighting is enough.
+            # A point appears once per list, so first sighting is enough --
+            # except for the exact flag, which must survive whichever list it
+            # came from.
             best_hit.setdefault(key, hit)
+            if hit.exact:
+                exact_keys.add(key)
 
-    ordered = sorted(scores.items(), key=lambda item: item[1], reverse=True)
-    return [_to_result(best_hit[key], score) for key, score in ordered]
+    # Exact identifier matches first, then by fused rank. Without this they
+    # merely tie: a keyword hit at rank 1 scores 1/(60+1), exactly what the top
+    # dense hit scores, and the tie breaks arbitrarily. If someone types a
+    # reference number and the text is found, that IS the answer -- it should
+    # not have to out-argue a semantic guess on points.
+    ordered = sorted(
+        scores.items(),
+        key=lambda item: ((item[0] in exact_keys), item[1]),
+        reverse=True,
+    )
+    results = []
+    for key, score in ordered:
+        result = _to_result(best_hit[key], score)
+        result.exact = key in exact_keys
+        results.append(result)
+    return results
 
 
 def deduplicate_by_file(results: list[SearchResult], limit: int) -> list[SearchResult]:
@@ -159,11 +184,13 @@ def deduplicate_by_file(results: list[SearchResult], limit: int) -> list[SearchR
 
     for file_id, result in by_file.items():
         result.score = sum(best_per_space[file_id].values())
+        result.exact = result.exact or any(s.exact for s in result.supporting)
         # Similarity stays the headline passage's own value. Summing it would
         # be meaningless -- similarities are not additive.
         result.similarity = max([result.similarity, *(s.similarity for s in result.supporting)])
 
-    ranked = sorted(by_file.values(), key=lambda r: r.score, reverse=True)
+    # Same ordering rule as the fusion above: exact first, then by score.
+    ranked = sorted(by_file.values(), key=lambda r: (r.exact, r.score), reverse=True)
     for result in ranked:
         result.supporting = sorted(result.supporting, key=lambda r: r.score, reverse=True)[:5]
     return ranked[:limit]
@@ -185,9 +212,42 @@ def drop_weak_tail(results: list[SearchResult], ratio: float | None = None) -> l
     if not results:
         return results
 
-    ratio = settings.relative_score_floor if ratio is None else ratio
-    cutoff = results[0].similarity * ratio
-    return [results[0], *(r for r in results[1:] if r.similarity >= cutoff)]
+    # When the query was an identifier and it was literally found, semantic
+    # guesses have to earn their place. A document that does not contain the
+    # number is not a worse answer -- it is not an answer, and listing it under
+    # the real one is exactly the "random stuff" that makes search feel broken.
+    if any(r.exact for r in results):
+        return [r for r in results if r.exact or r.similarity >= settings.confident_match_score]
+
+    # **One cutoff per space, not one for everything.**
+    #
+    # bge and CLIP similarities are not comparable -- the whole reason results
+    # are fused by rank. A good CLIP match scores ~0.30; unrelated bge text
+    # scores ~0.47. A single cutoff taken from whichever space happened to rank
+    # first therefore deletes the other one wholesale: searching "a red
+    # Mercedes car" matched the right photograph at 0.308 and then dropped it,
+    # because text noise about bioluminescence at 0.466 set the bar at 0.44.
+    #
+    # Comparing each result only against the best hit *in its own space* keeps
+    # the relative floor doing its job -- trimming the flat tail -- without
+    # letting one model's scale silently veto the other's.
+    best_per_space: dict[str, float] = {}
+    for result in results:
+        space = result.source_collection
+        best_per_space[space] = max(best_per_space.get(space, 0.0), result.similarity)
+
+    def floor_for(result: SearchResult) -> float:
+        best = best_per_space.get(result.source_collection, 0.0)
+        # Per-space ratio as well as per-space best: CLIP's range is about a
+        # third as wide as bge's, so one ratio cannot trim both sensibly. An
+        # explicit `ratio` argument overrides both, for tests.
+        if ratio is not None:
+            return best * ratio
+        if result.source_collection == settings.image_collection:
+            return best * settings.image_relative_score_floor
+        return best * settings.relative_score_floor
+
+    return [results[0], *(r for r in results[1:] if r.similarity >= floor_for(r))]
 
 
 def fuse(

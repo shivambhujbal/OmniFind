@@ -24,7 +24,7 @@ from app.config import settings
 from app.db.models import Asset, Chunk, File
 from app.logging_conf import get_logger
 from app.ml import embeddings_clip, embeddings_text, loaders
-from app.ml.pipeline import PROCESSABLE_KINDS, asset_path
+from app.ml.pipeline import CLIP_INDEXABLE_KINDS, asset_path
 from app.vectors import store
 
 log = get_logger(__name__)
@@ -113,7 +113,7 @@ def _index_text(session: Session, file_row: File) -> int:
 
 
 def _index_images(session: Session, file_row: File) -> int:
-    if not settings.enable_image_understanding:
+    if not settings.enable_image_search:
         # Leaves `clip_embedded` False, so turning the flag back on and
         # restarting picks these up through `requeue_unindexed` -- no re-import.
         return 0
@@ -122,7 +122,7 @@ def _index_images(session: Session, file_row: File) -> int:
         select(Asset).where(
             Asset.file_id == file_row.id,
             Asset.clip_embedded.is_(False),
-            Asset.kind.in_(PROCESSABLE_KINDS),
+            Asset.kind.in_(CLIP_INDEXABLE_KINDS),
         )
     ).all()
     if not pending:

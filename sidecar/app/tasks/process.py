@@ -14,7 +14,8 @@ from collections.abc import Callable
 
 from sqlalchemy import select
 
-from app.db.models import File, ProcessingStatus
+from app.config import settings
+from app.db.models import Asset, File, ProcessingStatus
 from app.db.session import session_scope
 from app.logging_conf import get_logger
 from app.ml import pipeline as ml_pipeline
@@ -85,4 +86,45 @@ def requeue_unprocessed() -> int:
 
     if pending:
         log.info("queued %d file(s) for ML processing", len(pending))
+    return len(pending)
+
+
+def requeue_uncaptioned() -> int:
+    """Pick up images that predate captioning being switched on.
+
+    Turning the flag on is not enough on its own: those files are already
+    READY, and `process_file` returns immediately for a READY file rather than
+    redoing hours of OCR. So they are stepped back to EXTRACTED, which is the
+    state that means "content is on disk, the vision models have not finished
+    with it" -- exactly true here -- and the normal queue takes it from there.
+
+    Driven by the per-asset `caption` column rather than by status, for the
+    same reason `requeue_unindexed` is: status describes the file, and this is
+    a fact about one asset. Only captionable kinds count, or every document
+    holding a figure would come back on every start and never settle.
+    """
+    if not settings.enable_captioning:
+        return 0
+
+    with session_scope() as session:
+        files = session.scalars(
+            select(File)
+            .join(Asset, Asset.file_id == File.id)
+            .where(
+                File.status == ProcessingStatus.READY,
+                Asset.caption.is_(None),
+                Asset.kind.in_(ml_pipeline.CLIP_INDEXABLE_KINDS),
+            )
+            .distinct()
+        ).all()
+        pending = [(f.id, f.original_name) for f in files]
+        for file_row in files:
+            file_row.status = ProcessingStatus.EXTRACTED
+        session.commit()
+
+    for file_id, name in pending:
+        submit_processing(file_id, name)
+
+    if pending:
+        log.info("queued %d file(s) for captioning", len(pending))
     return len(pending)

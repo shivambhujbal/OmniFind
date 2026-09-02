@@ -46,6 +46,50 @@ single list cannot monopolise the output.
 top-ranked image must outrank the second-place text hit despite scoring 0.25
 against 0.68.
 
+## Exact lookup needs a keyword index, not a better threshold
+
+Dense vectors cannot find an identifier. Measured on a real library:
+
+| Query: `Outward : 42595078122` | Cosine |
+| --- | --- |
+| The chunk that **literally contains** that number | **0.45** |
+| Unrelated lab reports | 0.57 |
+
+The right answer scored *below* the noise. bge tokenises a long digit string
+into subword fragments carrying no identity, so the ranking is not merely
+weak — it is inverted, and no threshold or reranking repairs an inversion.
+
+`search/lexical.py` adds a **third retriever**: SQLite FTS5 over chunk text,
+already in the database, offline, and indexing `42595078122` as a single token.
+Its results are fused into the same RRF as the two vector spaces.
+
+Three rules make it behave:
+
+1. **Identifier tokens are required, not preferred.** A token with a digit and
+   at least four characters triggers an AND search. Someone typing a reference
+   number wants *that* document, not everything sharing the word beside it.
+2. **Exact hits outrank semantic ones.** Without this they merely tie: a
+   keyword hit at rank 1 scores `1/(60+1)`, exactly what the top dense hit
+   scores, and the tie breaks arbitrarily.
+3. **Semantic noise is suppressed beneath an exact hit.** A document that does
+   not contain the number is not a worse answer, it is not an answer. Only
+   results clearing `confident_match_score` survive alongside an exact match.
+
+Two further details:
+
+- **Non-searchable chunks are still searched here.** A passage is kept out of
+  the *semantic* index when its embedding would be meaningless (a page of
+  patent numbers). That says nothing about its literal text — an exact lookup
+  should still reach it.
+- **The similarity shown is real.** Keyword hits have no score of their own, so
+  the stored vector is retrieved and the true cosine computed. The UI then
+  ignores it and prints "exact match", because describing a literal find by its
+  cosine would be actively misleading.
+
+FTS5 uses an external-content table with triggers, so the index tracks inserts,
+updates and deletes automatically; the migration backfills an existing library
+without re-importing.
+
 ## The relevance floor
 
 RRF fixes *ordering* across spaces, but it deliberately throws away magnitude —
@@ -125,6 +169,92 @@ index. On a real 1131-chunk library this rejected about 1%.
 startup and deletes anything that no longer qualifies from the vector store, so
 changing a threshold does not require re-importing a library (which would mean
 re-running OCR and captioning — hours on CPU).
+
+## A bare noun is not a caption
+
+CLIP is trained on image-*caption* pairs -- "a photo of a person standing in a
+park" -- and never on bare nouns. A one-word query is therefore out of
+distribution: it scores lower against *every* image, not just the wrong ones,
+and the relevance floor then removes the entire result set. Measured on 794
+photographs:
+
+| Query | Images above the floor |
+| --- | --- |
+| `human` | **0** |
+| `person` | **1** |
+| `black guy in yellow tshirt` | 2 (correct, rank 1) |
+
+Nothing was wrong with the index. A full description worked perfectly while the
+category word it belongs to returned nothing.
+
+`embeddings_clip.embed_query` now encodes the query under several caption
+templates and averages them. Only the query side changes, so this took effect
+with no re-indexing.
+
+| Query | raw | `"a photo of {}."` | ensemble (chosen) |
+| --- | --- | --- | --- |
+| person | 1 | 46 | 27 |
+| human | 0 | 21 | 15 |
+| vehicle | 4 | **1** | 6 |
+| car | 8 | 10 | 13 |
+| gibberish | 1 | 7 | 4 |
+
+A single template finds the most people, but makes `vehicle` *worse* than no
+template at all and pulls in twice the noise. The ensemble keeps the raw query
+in the mix -- so a phrase that already reads like a caption is not distorted by
+being wrapped in another one -- and is the only form that improves every real
+query.
+
+**This is retrieval, not classification.** "Show me every photo containing a
+human" is a different question from "rank these photos by how well they match
+*human*", and only the second is what a similarity search can answer. Recall
+improves enormously; it does not become exhaustive.
+
+## Two relative floors, because the two models have different spreads
+
+`relative_score_floor` trims results far weaker than the best one. One ratio
+cannot serve both spaces:
+
+| | Typical range | 0.95 of a top hit |
+| --- | --- | --- |
+| bge | 0.42 - 0.79 | a wide, useful band |
+| CLIP | 0.25 - 0.36 | 0.266 against a 0.280 best -- a band **0.014** wide |
+
+Searching `person` retrieved 27 matching images and displayed **4**: the
+absolute floor had already removed the non-answers, and then the relative floor
+removed most of the answers. `image_relative_score_floor` (0.90) trims the
+image tail on its own scale, and the same search now shows 25.
+
+## The relevance floor is per space, not per query
+
+RRF fixes ordering across the two spaces and then `drop_weak_tail` very nearly
+undid it. The floor was a single cutoff, `best.similarity * 0.95`, applied to
+every result whatever model produced it.
+
+That re-introduces the exact bug RRF exists to prevent. Measured:
+
+| Query: `a red Mercedes car` | Similarity | Fate |
+| --- | --- | --- |
+| The photograph of a red Mercedes (CLIP) | 0.308 | **dropped** |
+| Unrelated notes on bioluminescence (bge) | 0.466 | kept |
+
+A good CLIP match is ~0.30; bge *noise* is ~0.47. One cutoff taken from
+whichever space happened to rank first deletes the other space wholesale, so
+image results could essentially never appear in an "Everything" search --
+image search looked completely broken while working perfectly.
+
+The floor now takes the best hit **within each collection** and trims against
+that, so each model's tail is judged on its own scale.
+`tests/test_ranking.py::test_a_good_image_match_survives_alongside_unrelated_text`
+pins it.
+
+**Keyword hits on ordinary words go through the same floor.** A query with no
+identifier in it becomes an OR over its words, and those hits never pass
+through the vector store, so they carried no score floor at all: "a red
+Mercedes car" returned every document containing "car" at 0.33, which the dense
+retriever had already rejected at 0.55. They then *set* the relative floor and
+buried the real answers. Exact identifier hits stay exempt -- the number was
+found, and the model's opinion of the number is not evidence.
 
 ## There is no clean relevance threshold
 

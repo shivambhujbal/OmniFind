@@ -31,7 +31,8 @@ class ModelsResponse(BaseModel):
     ready_for_processing: bool
     # When false, captions and image vectors are skipped entirely. OCR still
     # runs, so scanned documents remain searchable.
-    image_understanding: bool
+    image_search: bool
+    captioning: bool
 
 
 @router.get("", response_model=ModelsResponse)
@@ -47,10 +48,11 @@ def list_models() -> ModelsResponse:
         "moondream2" if settings.captioner == "moondream2" else "blip2"
     ].available
 
-    # With image understanding off, the captioner's absence is irrelevant --
-    # reporting "not ready" because of a model the app will never load would be
-    # a false alarm.
-    ready = ocr_ready and (caption_ready or not settings.enable_image_understanding)
+    # With captioning off, the captioner's absence is irrelevant -- reporting
+    # "not ready" because of a model the app will never load would be a false
+    # alarm. CLIP is not part of this: image search degrades to text-only on its
+    # own, and says so, rather than blocking processing.
+    ready = ocr_ready and (caption_ready or not settings.enable_captioning)
 
     return ModelsResponse(
         device=settings.ml_device,
@@ -58,5 +60,6 @@ def list_models() -> ModelsResponse:
         captioner=settings.captioner,
         models=models,
         ready_for_processing=ready,
-        image_understanding=settings.enable_image_understanding,
+        image_search=settings.enable_image_search,
+        captioning=settings.enable_captioning,
     )

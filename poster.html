@@ -1,0 +1,384 @@
+<title>Local Multimodal File Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@600;700&display=swap">
+
+<style>
+@page{ size:297mm 420mm; margin:0; }
+
+:root{
+  --ground:#F2F3EF; --panel:#FFFFFF; --fill:#E7E9E3;
+  --ink:#1B1E22; --ink2:#4A5057; --ink3:#767C83; --rule:#D3D7CD;
+  --indigo:#3F53A0; --violet:#7A5399; --green:#2C7458; --orange:#A8501F;
+  --indigo-bg:#E4E7F5; --violet-bg:#EFE7F5; --green-bg:#DEEEE6; --orange-bg:#F8E8DD;
+}
+
+*{box-sizing:border-box; margin:0; padding:0}
+html,body{background:#8A8D86}
+body{
+  font-family:"IBM Plex Sans",system-ui,"Segoe UI",sans-serif;
+  color:var(--ink); -webkit-font-smoothing:antialiased;
+  display:flex; justify-content:center; padding:10mm 0;
+}
+
+.page{
+  width:297mm; height:420mm; background:var(--ground);
+  padding:13mm 13mm 11mm; overflow:hidden;
+  display:flex; flex-direction:column; gap:3.7mm;
+  box-shadow:0 2mm 8mm rgba(0,0,0,.28);
+}
+@media print{
+  html,body{background:#fff}
+  body{padding:0; display:block}
+  .page{box-shadow:none; margin:0}
+}
+
+/* ---- shared ---- */
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.lbl{
+  font-family:"IBM Plex Mono",monospace; font-size:6.4pt; font-weight:500;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--ink3);
+}
+h2{
+  font-family:"IBM Plex Serif",Georgia,serif; font-size:14pt; font-weight:600;
+  line-height:1.1; margin-bottom:2.6mm;
+}
+.zone{display:flex; flex-direction:column}
+.panel{background:var(--panel); border:.3mm solid var(--rule)}
+
+/* ---- 1 title ---- */
+.hd{
+  background:var(--panel); border:.3mm solid var(--rule);
+  padding:5.4mm 8mm 5mm; display:flex; flex-direction:column; gap:1.9mm;
+}
+.hd h1{
+  font-family:"IBM Plex Serif",Georgia,serif; font-size:35pt; font-weight:700;
+  line-height:1; letter-spacing:-.02em;
+}
+.hd .sub{font-size:12.5pt; color:var(--ink2); line-height:1.25}
+.badges{display:flex; gap:2mm; margin-top:1.4mm}
+.badge{
+  font-family:"IBM Plex Mono",monospace; font-size:7pt; letter-spacing:.09em;
+  border:.3mm solid var(--rule); color:var(--ink2); padding:1.5mm 3mm; background:var(--ground);
+}
+.badge.on{border-color:var(--green); color:var(--green); background:var(--green-bg); font-weight:600}
+
+/* ---- 2+3 row ---- */
+.row{display:grid; grid-template-columns:1fr 2.02fr; gap:4.2mm}
+.prob{display:flex; flex-direction:column; gap:3.4mm}
+.prob .blk{display:flex; flex-direction:column; gap:1.6mm}
+.prob p{font-size:9.4pt; line-height:1.45; color:var(--ink2)}
+.prob p b{color:var(--ink); font-weight:600}
+.prob code{font-family:"IBM Plex Mono",monospace; font-size:8.4pt; background:var(--fill); padding:0 .8mm}
+
+/* architecture stack */
+.arch{display:flex; flex-direction:column}
+.abox{
+  background:var(--panel); border:.3mm solid var(--rule); border-bottom:none;
+  padding:2.9mm 4mm; display:grid; grid-template-columns:30mm 1fr; align-items:baseline; gap:0 3mm;
+}
+.abox .t{font-size:10.6pt; font-weight:600; line-height:1.15}
+.abox .c{font-size:8.2pt; color:var(--ink2); line-height:1.3; margin-top:.6mm}
+.abox .col2{display:flex; flex-direction:column}
+.wire{
+  background:var(--indigo-bg); border-left:.3mm solid var(--rule); border-right:.3mm solid var(--rule);
+  color:var(--indigo); font-family:"IBM Plex Mono",monospace; font-size:7.6pt;
+  padding:2mm 4mm; text-align:center; letter-spacing:.02em; font-weight:500;
+}
+.stores{display:grid; grid-template-columns:repeat(4,1fr)}
+.st{
+  background:var(--panel); border:.3mm solid var(--rule); border-right:none;
+  padding:2.8mm 3.2mm; display:flex; flex-direction:column; gap:.9mm;
+}
+.stores .st:last-child{border-right:.3mm solid var(--rule)}
+.st .t{font-size:9pt; font-weight:600; line-height:1.1}
+.st .c{font-size:7.4pt; color:var(--ink2); line-height:1.3}
+
+/* ---- 4 ingestion ---- */
+.flow{display:grid; grid-template-columns:repeat(6,1fr); gap:0; align-items:stretch}
+.step{
+  background:var(--panel); border:.3mm solid var(--rule); border-right:none;
+  border-top:.9mm solid var(--rule);
+  padding:3mm 3.4mm; display:flex; flex-direction:column; gap:1.2mm; position:relative;
+}
+.flow .step:last-child{border-right:.3mm solid var(--rule)}
+.step.i{border-top-color:var(--indigo)}
+.step.v{border-top-color:var(--violet)}
+.step.g{border-top-color:var(--green)}
+.step .n{font-family:"IBM Plex Mono",monospace; font-size:6.6pt; color:var(--ink3); letter-spacing:.1em}
+.step .t{font-size:9.4pt; font-weight:600; line-height:1.15}
+.step .c{font-size:7.4pt; color:var(--ink2); line-height:1.32}
+.step .c b{color:var(--ink)}
+.life{display:flex; align-items:center; gap:1.8mm; margin-top:2.6mm; flex-wrap:wrap}
+.life .s{
+  font-family:"IBM Plex Mono",monospace; font-size:7pt; letter-spacing:.04em;
+  border:.3mm solid var(--rule); background:var(--panel); padding:1.2mm 2.4mm;
+}
+.life .s.on{border-color:var(--green); color:var(--green); background:var(--green-bg); font-weight:600}
+.life .a{color:var(--ink3); font-size:7.5pt; font-family:"IBM Plex Mono",monospace}
+.life .note{font-size:8pt; color:var(--ink2); margin-left:auto; line-height:1.3}
+
+/* ---- 5 search ---- */
+.qbar{
+  background:var(--fill); border:.3mm solid var(--rule); padding:2.4mm 4mm;
+  font-family:"IBM Plex Mono",monospace; font-size:9pt; color:var(--ink); text-align:center;
+}
+.lanes{display:grid; grid-template-columns:repeat(3,1fr); gap:3mm; margin-top:2.6mm}
+.lane{
+  background:var(--panel); border:.3mm solid var(--rule); border-top:1mm solid;
+  padding:3mm 3.6mm; display:flex; flex-direction:column; gap:1.3mm;
+}
+.lane.a{border-top-color:var(--indigo)} .lane.b{border-top-color:var(--violet)} .lane.c{border-top-color:var(--green)}
+.lane .w{font-family:"IBM Plex Mono",monospace; font-size:6.4pt; letter-spacing:.13em; text-transform:uppercase; font-weight:600}
+.lane.a .w{color:var(--indigo)} .lane.b .w{color:var(--violet)} .lane.c .w{color:var(--green)}
+.lane .t{font-size:10pt; font-weight:600; line-height:1.15}
+.lane .c{font-size:7.8pt; color:var(--ink2); line-height:1.32; flex:1}
+.lane .m{
+  font-family:"IBM Plex Mono",monospace; font-size:6.8pt; color:var(--ink3);
+  border-top:.3mm solid var(--rule); padding-top:1.4mm;
+}
+.converge{
+  display:flex; align-items:center; justify-content:center; gap:2.5mm;
+  padding:2mm 0 2mm; color:var(--ink3); font-family:"IBM Plex Mono",monospace; font-size:7pt;
+}
+.converge::before,.converge::after{content:""; flex:1; max-width:62mm; height:.3mm; background:var(--rule)}
+.fuse{
+  background:var(--panel); border:.3mm solid var(--rule); padding:3mm 4mm;
+  display:flex; align-items:baseline; gap:3mm;
+}
+.fuse .t{font-size:11pt; font-weight:600; font-family:"IBM Plex Serif",Georgia,serif}
+.fuse .c{font-size:8.4pt; color:var(--ink2); flex:1}
+.fuse .f{font-family:"IBM Plex Mono",monospace; font-size:9pt; color:var(--indigo); font-weight:500}
+.after{display:grid; grid-template-columns:1fr 1fr 1.15fr; margin-top:2.4mm}
+.after > div{
+  background:var(--panel); border:.3mm solid var(--rule); border-right:none;
+  padding:2.6mm 3.4mm; display:flex; flex-direction:column; gap:.9mm;
+}
+.after > div:last-child{border-right:.3mm solid var(--rule); border-color:var(--green); background:var(--green-bg)}
+.after .t{font-size:9.2pt; font-weight:600}
+.after .c{font-size:7.5pt; color:var(--ink2); line-height:1.3}
+.after > div:last-child .t{color:var(--green)}
+
+/* ---- 6+7 row ---- */
+.row2{display:grid; grid-template-columns:1fr 2.02fr; gap:4.2mm}
+table{border-collapse:collapse; width:100%; font-size:8.2pt; background:var(--panel)}
+td{border-bottom:.3mm solid var(--rule); padding:1.65mm 3mm; line-height:1.2}
+tr:last-child td{border-bottom:none}
+td.k{color:var(--ink2); width:38%}
+td.v{font-family:"IBM Plex Mono",monospace; font-size:7.6pt; font-weight:500}
+.tbl{border:.3mm solid var(--rule)}
+
+.decs{display:flex; flex-direction:column; gap:2.4mm}
+.dec{background:var(--panel); border:.3mm solid var(--rule); border-left:1mm solid; padding:2.8mm 4mm; display:flex; flex-direction:column; gap:1.1mm}
+.dec.a{border-left-color:var(--indigo)} .dec.b{border-left-color:var(--violet)} .dec.c{border-left-color:var(--green)}
+.dec .w{font-family:"IBM Plex Mono",monospace; font-size:6.3pt; letter-spacing:.13em; text-transform:uppercase; font-weight:600}
+.dec.a .w{color:var(--indigo)} .dec.b .w{color:var(--violet)} .dec.c .w{color:var(--green)}
+.dec .t{font-size:10.2pt; font-weight:600; line-height:1.2; font-family:"IBM Plex Serif",Georgia,serif}
+.dec .c{font-size:8.1pt; color:var(--ink2); line-height:1.38}
+.dec .c b{font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:8.4pt}
+.dec .c .bad{color:var(--orange); font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:8.4pt}
+
+/* ---- 8 phases ---- */
+.phases{display:grid; grid-template-columns:repeat(6,1fr)}
+.ph{
+  background:var(--panel); border:.3mm solid var(--rule); border-right:none;
+  padding:2.3mm 3mm; display:flex; flex-direction:column; gap:.7mm;
+}
+.phases .ph:last-child{border-right:.3mm solid var(--rule)}
+.ph .n{font-family:"IBM Plex Mono",monospace; font-size:6.3pt; letter-spacing:.1em; color:var(--ink3)}
+.ph .t{font-size:8.4pt; font-weight:600; line-height:1.15}
+.ph .s{font-family:"IBM Plex Mono",monospace; font-size:6.3pt; letter-spacing:.06em; color:var(--ink3)}
+.ph.done{border-color:var(--green); background:var(--green-bg)}
+.ph.done .s{color:var(--green); font-weight:600}
+.ph.now{border-color:var(--indigo); background:var(--indigo-bg)}
+.ph.now .s{color:var(--indigo); font-weight:600}
+.foot{
+  text-align:center; font-size:7.6pt; color:var(--ink3); margin-top:2.4mm; line-height:1.3;
+}
+</style>
+
+<div class="page">
+
+  <!-- 1 -->
+  <div class="hd">
+    <span class="lbl">Final year project</span>
+    <h1>Local Multimodal File Search</h1>
+    <p class="sub">Find your files by what is inside them &mdash; not by their name</p>
+    <div class="badges">
+      <span class="badge on">100% OFFLINE</span>
+      <span class="badge">NO SERVER</span>
+      <span class="badge">NO ACCOUNT</span>
+      <span class="badge">ONE WINDOWS INSTALLER</span>
+    </div>
+  </div>
+
+  <!-- 2 + 3 -->
+  <div class="row">
+    <div class="prob">
+      <div class="blk">
+        <h2>The problem</h2>
+        <p><b>Windows Search finds filenames. It cannot find meaning.</b></p>
+        <p>A scanned certificate saved as <code>IMG_20230417.pdf</code> is invisible to every search tool on the machine &mdash; the page is a picture, so there is no text in the file at all.</p>
+      </div>
+      <div class="blk">
+        <h2>The objective</h2>
+        <p>Search personal PDFs, Word documents and images by their <b>content</b>, using ordinary language, entirely on one Windows laptop &mdash; with no internet connection, no account and no cloud service.</p>
+      </div>
+    </div>
+
+    <div class="zone">
+      <h2>System architecture</h2>
+      <div class="arch">
+        <div class="abox">
+          <span class="lbl">Desktop shell</span>
+          <div class="col2">
+            <span class="t">Tauri (Rust)</span>
+            <span class="c">Window and process lifecycle &middot; spawns the backend &middot; builds the installer</span>
+          </div>
+        </div>
+        <div class="abox">
+          <span class="lbl">User interface</span>
+          <div class="col2">
+            <span class="t">React + TypeScript (Vite)</span>
+            <span class="c">Search, library, indexing progress &middot; self-hosted fonts, no CDN</span>
+          </div>
+        </div>
+        <div class="wire">&darr;&nbsp;&nbsp;HTTP over 127.0.0.1 only &mdash; never exposed to the network&nbsp;&nbsp;&darr;</div>
+        <div class="abox">
+          <span class="lbl">Backend sidecar</span>
+          <div class="col2">
+            <span class="t">FastAPI, packaged with PyInstaller</span>
+            <span class="c">Folder scan &middot; upload &middot; search &middot; job progress &middot; health</span>
+          </div>
+        </div>
+        <div class="abox">
+          <span class="lbl">Background work</span>
+          <div class="col2">
+            <span class="t">In-process queue and worker thread</span>
+            <span class="c">No Celery, no Redis, no message broker</span>
+          </div>
+        </div>
+        <div class="stores">
+          <div class="st"><span class="t">SQLite</span><span class="c">Files, passages, status, plus a full-text keyword index</span></div>
+          <div class="st"><span class="t">Qdrant, embedded</span><span class="c">Two vector collections, in-process &mdash; no server, no Docker</span></div>
+          <div class="st"><span class="t">Filesystem</span><span class="c">Copies of originals, page images, thumbnails</span></div>
+          <div class="st"><span class="t">Model weights</span><span class="c">About 9 GB on disk, loaded locally, never downloaded</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 -->
+  <div class="zone">
+    <h2>How a file gets in</h2>
+    <div class="flow">
+      <div class="step"><span class="n">01</span><span class="t">Scan folder</span><span class="c">Supported types only. Originals are <b>copied</b>, never moved.</span></div>
+      <div class="step"><span class="n">02</span><span class="t">Extract</span><span class="c">Text and page images from PDF, DOCX and image files</span></div>
+      <div class="step"><span class="n">03</span><span class="t">Chunk and filter</span><span class="c">Split into passages; discard those with no retrievable content</span></div>
+      <div class="step i"><span class="n">04</span><span class="t">Embed and index</span><span class="c">bge-large &rarr; 1024-dim vectors &rarr; Qdrant, plus the FTS5 keyword index</span></div>
+      <div class="step v"><span class="n">05</span><span class="t">Read and describe</span><span class="c">PaddleOCR on GPU &middot; moondream2 captions &middot; CLIP image vectors</span></div>
+      <div class="step g"><span class="n">06</span><span class="t">Ready</span><span class="c">Searchable by text, by picture, and by exact number</span></div>
+    </div>
+    <div class="life">
+      <span class="s">pending</span><span class="a">&rarr;</span>
+      <span class="s">extracting</span><span class="a">&rarr;</span>
+      <span class="s on">extracted</span><span class="a">&rarr;</span>
+      <span class="s">processing</span><span class="a">&rarr;</span>
+      <span class="s on">ready</span>
+      <span class="note">Work is prioritised so a file becomes findable in about a second, while slower image processing continues behind it.</span>
+    </div>
+  </div>
+
+  <!-- 5 -->
+  <div class="zone">
+    <h2>How a question gets answered</h2>
+    <div class="qbar">&ldquo;outward reference 42595078122&rdquo;</div>
+    <div class="lanes">
+      <div class="lane a">
+        <span class="w">Retriever A</span>
+        <span class="t">Meaning, in text</span>
+        <span class="c">Matches passages by sense rather than by keyword, so the words you type need not appear in the document.</span>
+        <span class="m">bge-large-en-v1.5 &middot; cut-off 0.55</span>
+      </div>
+      <div class="lane b">
+        <span class="w">Retriever B</span>
+        <span class="t">Meaning, in pictures</span>
+        <span class="c">Places images and text in one shared space, so a description can be matched directly against a photograph.</span>
+        <span class="m">OpenCLIP ViT-H/14 &middot; cut-off 0.22</span>
+      </div>
+      <div class="lane c">
+        <span class="w">Retriever C</span>
+        <span class="t">Exact words and numbers</span>
+        <span class="c">A literal keyword index for reference numbers and codes, which meaning-based search cannot find at all.</span>
+        <span class="m">SQLite FTS5 &middot; identifiers required</span>
+      </div>
+    </div>
+    <div class="converge"><span>three ranked lists</span></div>
+    <div class="fuse">
+      <span class="t">Reciprocal Rank Fusion</span>
+      <span class="c">Merged by position in each list, not by score &mdash; the raw numbers are discarded deliberately.</span>
+      <span class="f">1 / (60 + rank)</span>
+    </div>
+    <div class="after">
+      <div><span class="t">Group by file</span><span class="c">Strongest passage becomes the headline; the rest attach as supporting evidence</span></div>
+      <div><span class="t">Relevance floor</span><span class="c">Weak results dropped; when the best match is marginal, the app says so</span></div>
+      <div><span class="t">Ranked results</span><span class="c">Title, snippet, thumbnail, page number and match strength &mdash; ten per page</span></div>
+    </div>
+  </div>
+
+  <!-- 6 + 7 -->
+  <div class="row2">
+    <div class="zone">
+      <h2>Built with</h2>
+      <div class="tbl">
+        <table>
+          <tr><td class="k">Desktop shell</td><td class="v">Tauri (Rust)</td></tr>
+          <tr><td class="k">Interface</td><td class="v">React &middot; TypeScript &middot; Vite</td></tr>
+          <tr><td class="k">Backend</td><td class="v">Python &middot; FastAPI &middot; PyInstaller</td></tr>
+          <tr><td class="k">Database</td><td class="v">SQLite &middot; SQLAlchemy &middot; Alembic</td></tr>
+          <tr><td class="k">Keyword index</td><td class="v">SQLite FTS5</td></tr>
+          <tr><td class="k">Vector store</td><td class="v">Qdrant (embedded)</td></tr>
+          <tr><td class="k">Text embeddings</td><td class="v">BAAI/bge-large-en-v1.5</td></tr>
+          <tr><td class="k">Image embeddings</td><td class="v">OpenCLIP ViT-H/14</td></tr>
+          <tr><td class="k">Captioning</td><td class="v">moondream2</td></tr>
+          <tr><td class="k">OCR</td><td class="v">PaddleOCR (GPU) &middot; Tesseract (CPU)</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="zone">
+      <h2>Three decisions, each measured</h2>
+      <div class="decs">
+        <div class="dec a">
+          <span class="w">Separate spaces</span>
+          <span class="t">Text and image vectors are stored in two collections, never one.</span>
+          <span class="c">Both are 1024 numbers wide, but they are different spaces. Searching across a mixture returns noise &mdash; and nothing about the results looks wrong.</span>
+        </div>
+        <div class="dec b">
+          <span class="w">Rank, not score</span>
+          <span class="t">Results are merged by position, because the two models' scores are not comparable.</span>
+          <span class="c">A good text match scores <b>0.70</b>. An equally good image match scores <b>0.25</b>. Comparing them directly puts every text result above every image result.</span>
+        </div>
+        <div class="dec c">
+          <span class="w">Keywords still matter</span>
+          <span class="t">Meaning-based search cannot find a reference number.</span>
+          <span class="c">The passage literally containing the number scored <span class="bad">0.45</span>; an unrelated document scored <span class="bad">0.57</span>. The right answer ranked <i>below</i> the noise &mdash; an inversion no threshold repairs. A keyword index solves it.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8 -->
+  <div class="zone">
+    <div class="phases">
+      <div class="ph done"><span class="n">PHASE 1</span><span class="t">Backend and round trip</span><span class="s">COMPLETE</span></div>
+      <div class="ph done"><span class="n">PHASE 2</span><span class="t">Storage and ingestion</span><span class="s">COMPLETE</span></div>
+      <div class="ph done"><span class="n">PHASE 3</span><span class="t">Models, OCR, queue</span><span class="s">COMPLETE</span></div>
+      <div class="ph done"><span class="n">PHASE 4</span><span class="t">Vector search and ranking</span><span class="s">COMPLETE</span></div>
+      <div class="ph now"><span class="n">PHASE 5</span><span class="t">Desktop interface</span><span class="s">IN PROGRESS</span></div>
+      <div class="ph"><span class="n">PHASE 6</span><span class="t">Windows installer</span><span class="s">PLANNED</span></div>
+    </div>
+    <p class="foot">All figures measured against a real document library. No network connection is used at any point after installation.</p>
+  </div>
+
+</div>

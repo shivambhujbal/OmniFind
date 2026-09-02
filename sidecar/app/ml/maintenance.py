@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.db.models import Chunk
+from app.db.models import Asset, Chunk
 from app.ingestion import quality
 from app.logging_conf import get_logger
 from app.vectors import store
@@ -68,3 +68,39 @@ def reclassify_chunks(session: Session) -> ReclassifyResult:
         log.info("%d chunk(s) became searchable and will be re-indexed", promoted)
 
     return ReclassifyResult(len(chunks), len(demoted), promoted)
+
+
+def prune_image_vectors(session: Session) -> int:
+    """Drop CLIP vectors for assets that are no longer indexable.
+
+    The indexable set narrowed to standalone image files (see
+    `ml.pipeline.CLIP_INDEXABLE_KINDS`). Anything embedded before that change
+    is still sitting in the images collection, where it goes on matching
+    queries and crowding out the standalone photographs the collection exists
+    for. Deleting the rows in SQLite is not enough: the vector store is a
+    separate database and keeps whatever it was given.
+
+    Same contract as `reclassify_chunks` -- classification only, no models, no
+    file I/O, idempotent, cheap enough to run at every startup.
+    """
+    from app.ml.pipeline import CLIP_INDEXABLE_KINDS
+
+    stale = session.scalars(
+        select(Asset).where(
+            Asset.clip_embedded.is_(True),
+            Asset.kind.not_in(CLIP_INDEXABLE_KINDS),
+        )
+    ).all()
+    if not stale:
+        return 0
+
+    store.delete_points(settings.image_collection, [a.id for a in stale])
+    for asset in stale:
+        # Reset rather than leave it True: the flag means "has a vector", and
+        # after this it does not. If the rule ever widens again, this is what
+        # lets `requeue_unindexed` pick them back up.
+        asset.clip_embedded = False
+    session.commit()
+
+    log.info("pruned %d image vector(s) for no-longer-indexable assets", len(stale))
+    return len(stale)

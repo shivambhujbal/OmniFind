@@ -102,6 +102,14 @@ frontend/          phase 6 (React)
   stay `cuda` / `paddleocr` per spec; the local `.env` sets `FS_ML_DEVICE=cpu` and
   `FS_OCR_ENGINE=tesseract` so it can actually run. Flipping those back is the entire
   change needed on a CUDA machine.
+- **It also cannot fit ViT-H/14.** 15.2GB RAM with a 4GB pagefile gives a ~19GB commit
+  limit; measured with nothing else running, 5.84GB free fell to 3.38GB after bge and
+  building ViT-H/14 killed the process outright — no traceback, mid-log-line, every time.
+  Same for moondream2 (4.1GB). The `.env` overrides `FS_CLIP_MODEL_DIR_NAME`,
+  `FS_CLIP_MODEL_HUB_ID` and `FS_CLIP_EMBEDDING_DIM` to ViT-B/32 (~600MB, 512-dim);
+  code defaults stay the spec model. **Changing the CLIP model invalidates the images
+  collection** — the widths differ and the spaces are incomparable regardless, so drop it
+  and let `requeue_unindexed` rebuild.
 
 Run: `scripts\run_backend.ps1`, then `scripts\run_frontend.ps1`.
 
@@ -113,13 +121,25 @@ Run: `scripts\run_backend.ps1`, then `scripts\run_frontend.ps1`.
   `cache_clear()` needs `gc.collect()` to actually free the tensors.
 
 ## Status
-Phases 1-4 complete. 180 fast tests plus `slow` inference tests against the real weights; ruff and
+Phases 1-4 complete. 291 fast tests plus `slow` inference tests against the real weights; ruff and
 mypy clean. Phase 5 (full frontend flow) is next.
 
-**Documents-only mode.** `FS_ENABLE_IMAGE_UNDERSTANDING=false` on this machine: captioning is
-~390s/image on CPU. It gates captions and CLIP image vectors only — OCR still runs (~1s with
-Tesseract), so scans stay searchable. Assets keep `clip_embedded=False`, so enabling the flag on a
-GPU machine picks them up via `requeue_unindexed` with no re-import.
+**Two image switches, not one.** Measured on this CPU: a CLIP image vector costs **2.19s**
+per image batched, a moondream2 caption **~390s** — 178x more. One flag for both made a CPU-only
+machine give up picture search it could easily afford, so they are separate:
+`FS_ENABLE_IMAGE_SEARCH=true` and `FS_ENABLE_CAPTIONING=false` here. OCR is governed by neither
+and always runs. Assets keep `clip_embedded=False` until indexed, so flipping either flag picks
+the backlog up via `requeue_unindexed` with no re-import. `FS_ENABLE_IMAGE_UNDERSTANDING` is
+retired and now raises rather than being ignored — `extra="ignore"` would have dropped it in
+silence and re-enabled the 390s half.
+
+**Only standalone image files get CLIP vectors** (`CLIP_INDEXABLE_KINDS`). Pictures *inside* a
+document are excluded: OCR already reaches them, so a vector duplicates a working route at real
+cost — one 52-page slide deck extracted to 2054 embedded images, 95% of a 79-minute backlog, for
+a file that was already searchable. OCR's own coverage (`PROCESSABLE_KINDS`) is unchanged and
+still spans page and embedded images. `ml.maintenance.prune_image_vectors` clears vectors written
+before the rule narrowed; Qdrant is a separate database, so dropping the SQLite flag alone would
+leave them matching queries forever.
 
 ### Phase 4 design notes
 - **Two collections, never one.** bge and CLIP vectors are both 1024-wide and completely
@@ -133,6 +153,13 @@ GPU machine picks them up via `requeue_unindexed` with no re-import.
   sat extracted-but-unsearchable behind one scanned page's captioning. Indexing first made the
   library searchable in 15s instead of 7 minutes.
 
+**A bare noun is not a caption.** CLIP never saw "person" in training, it saw "a photo of a
+person in a park". One-word queries score low against *every* image, so the floor deleted the
+whole result set — `human` returned 0 of 794. `embed_query` now averages the query over caption
+templates (query side only, no re-indexing): person 1→27, human 0→15, vehicle 4→6. Also
+`image_relative_score_floor` (0.90), separate from the text one (0.95): CLIP's range is a third
+as wide, so one ratio showed 4 of 27 retrieved images.
+
 ### Ingestion and UI notes
 - **`store_existing_file` copies; `store_upload` moves.** The upload path consumes its source
   (a temp file this app spooled) and deletes it on a duplicate. Doing that to a folder the user
@@ -144,6 +171,10 @@ GPU machine picks them up via `requeue_unindexed` with no re-import.
   silently shrinks the candidate pool.
 
 ### Result quality (learned the hard way on a real library)
+- **Exact identifiers need FTS5, not embeddings.** Searching a reference number scored the chunk
+  containing it at 0.45 while noise scored 0.57 - inverted, not merely weak. `search/lexical.py`
+  is a third retriever fused into the same RRF; exact hits outrank semantic ones and suppress
+  non-confident ones beneath them.
 - **Never show the RRF score.** It is `1/(k+rank)` — rank 1 is always 0.0164 — so it made an
   excellent match look identical to a barely-passing one. `SearchResult.similarity` carries the
   real cosine; that is what the UI displays.

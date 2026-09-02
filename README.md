@@ -23,18 +23,23 @@ GPU/CPU seam.
 The frontend is **Streamlit for now** — a stand-in that exercises the same
 loopback HTTP API the Tauri + React shell will use in phase 6.
 
-### Documents-only mode
+### Images on a CPU
 
-Image *understanding* — captioning pictures and searching them by appearance —
-is switched **off** on this machine (`FS_ENABLE_IMAGE_UNDERSTANDING=false`).
-Captioning one image with moondream2 costs about **390 seconds** on this CPU,
-which makes an image-heavy document impractical to ingest. It is a one-line
-change to switch back on once the project moves to a GPU machine, and files
-already ingested are picked up automatically — no re-import.
+Two switches, because the two halves of "image understanding" differ in cost by
+**178x** on this machine:
 
-**OCR is not affected.** Reading text out of a scan takes about a second with
-Tesseract, so scanned documents are still fully searchable; the sample library
-below finds a scanned invoice by its total.
+| | Cost per image, this CPU | Setting |
+| --- | --- | --- |
+| Match pictures by appearance (CLIP vector) | **2.19 s** | `FS_ENABLE_IMAGE_SEARCH=true` |
+| Describe each picture (moondream2 caption) | **~390 s** | `FS_ENABLE_CAPTIONING=false` |
+
+So image *search* runs here and captioning does not. On a GPU both are about a
+second — turn both on. Files already ingested are picked up automatically when
+either flag changes; there is no re-import.
+
+**OCR is governed by neither.** Reading text out of a scan takes about a second
+with Tesseract, so scanned documents are fully searchable regardless; the sample
+library finds a scanned invoice by its total.
 
 ## Setup
 

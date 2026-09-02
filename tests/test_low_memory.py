@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -164,3 +165,75 @@ def test_search_returns_text_results_when_the_worker_is_busy(
 
     assert response.results, "text results were lost because images were busy"
     assert not response.searched_images, "should have reported image search as skipped"
+
+
+# --- releasing after use, not at the next load --------------------------
+
+
+def test_captioner_is_released_as_soon_as_captioning_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Freeing at the next load is what killed the sidecar.
+
+    Evicting moondream2 (4.1GB) and building ViT-H/14 (2.9GB peak) in the same
+    instant exceeded a 19.2GB commit limit with ~5GB free: the process vanished
+    mid-log-line with no traceback, straight after "evicted moondream to make
+    room for clip". Releasing when the pass ends puts minutes between the free
+    and the next allocation.
+    """
+    from app.ml import loaders
+
+    monkeypatch.setattr(loaders.settings, "ml_low_memory", True)
+
+    cleared: list[str] = []
+
+    class FakeLoader:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def cache_info(self):  # noqa: ANN202
+            return SimpleNamespace(currsize=1)
+
+        def cache_clear(self) -> None:
+            cleared.append(self.name)
+
+    monkeypatch.setattr(
+        loaders,
+        "_HEAVY_LOADERS",
+        {"moondream": FakeLoader("moondream"), "clip": FakeLoader("clip")},
+    )
+
+    assert loaders.release_heavy_model("moondream2") is True
+    assert cleared == ["moondream"], "the engine name must map to the loader key"
+
+
+def test_release_maps_blip2_without_mangling_the_digit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ "moondream2" -> "moondream" but "blip2" -> "blip2".
+
+    Any rule that strips the trailing digit frees nothing for BLIP-2 and the
+    crash comes straight back, silently.
+    """
+    from app.ml import loaders
+
+    monkeypatch.setattr(loaders.settings, "ml_low_memory", True)
+    cleared: list[str] = []
+
+    class FakeLoader:
+        def cache_info(self):  # noqa: ANN202
+            return SimpleNamespace(currsize=1)
+
+        def cache_clear(self) -> None:
+            cleared.append("blip2")
+
+    monkeypatch.setattr(loaders, "_HEAVY_LOADERS", {"blip2": FakeLoader()})
+
+    assert loaders.release_heavy_model("blip2") is True
+    assert cleared == ["blip2"]
+
+
+def test_release_is_a_no_op_on_a_gpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keeping models resident is the right policy when memory allows."""
+    from app.ml import loaders
+
+    monkeypatch.setattr(loaders.settings, "ml_low_memory", False)
+    assert loaders.release_heavy_model("moondream2") is False

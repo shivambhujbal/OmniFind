@@ -43,7 +43,7 @@ def stub_search(monkeypatch: pytest.MonkeyPatch) -> dict:
         service.embeddings_text, "embed_query", lambda q: np.zeros(4, dtype=np.float32)
     )
     monkeypatch.setattr(service.store, "search_text", fake_text_search)
-    monkeypatch.setattr(settings, "enable_image_understanding", False)
+    monkeypatch.setattr(settings, "enable_image_search", False)
     return captured
 
 
@@ -73,7 +73,7 @@ def test_everything_applies_no_filter(stub_search: dict) -> None:
 
 def test_a_documents_query_does_not_touch_clip(monkeypatch: pytest.MonkeyPatch) -> None:
     """Loading a 2.9GB model for hits that would be filtered out is pure waste."""
-    monkeypatch.setattr(settings, "enable_image_understanding", True)
+    monkeypatch.setattr(settings, "enable_image_search", True)
     monkeypatch.setattr(
         service.embeddings_text, "embed_query", lambda q: np.zeros(4, dtype=np.float32)
     )

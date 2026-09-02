@@ -221,13 +221,16 @@ def _render_file_detail(client: ApiClient, file_id: int) -> None:
     meta[2].metric("Images", detail["asset_count"])
     meta[3].metric("Pages", detail["page_count"] or "—")
 
-    actions = st.columns(3)
-    actions[0].link_button("Open file", client.file_content_url(file_id))
-    if actions[1].button("Reprocess", key=f"reprocess-{file_id}"):
-        client.reprocess_file(file_id)
-        st.rerun()
-    if actions[2].button("Remove", key=f"delete-{file_id}"):
-        client.delete_file(file_id)
+    # Open and Remove live on the row itself. Repeating them here would reuse
+    # the same widget keys and Streamlit raises a duplicate-key error, which
+    # would break the details panel outright.
+    if st.button("Reprocess", key=f"reprocess-{file_id}"):
+        try:
+            client.reprocess_file(file_id)
+        except BackendError as exc:
+            st.error(str(exc))
+            return
+        st.toast("Re-processing queued")
         st.rerun()
 
     chunks_tab, images_tab = st.tabs(
@@ -259,9 +262,16 @@ def _render_file_detail(client: ApiClient, file_id: int) -> None:
                     st.caption(f"“{asset['caption']}”")
 
 
+LIBRARY_PAGE_SIZE = 20
+
+
+def _library_page_reset() -> None:
+    st.session_state["library_page"] = 1
+
+
 def render_file_list(client: ApiClient) -> None:
     try:
-        files: list[dict[str, Any]] = client.list_files()
+        files: list[dict[str, Any]] = client.list_files(limit=1000)
     except BackendError as exc:
         st.error(str(exc))
         return
@@ -271,18 +281,103 @@ def render_file_list(client: ApiClient) -> None:
         return
 
     st.subheader(f"Library ({len(files)})")
-    for file_row in files:
-        kind = KIND_LABEL.get(file_row["kind"], file_row["kind"])
-        status = STATUS_LABEL.get(file_row["status"], file_row["status"])
-        title = file_row["title"] or file_row["original_name"]
 
-        with st.expander(
-            f"{title}  —  {kind} · {status} · {file_row['chunk_count']} passages · "
-            f"{_human_size(file_row['size_bytes'])}"
+    needle = (
+        st.text_input(
+            "Filter by name",
+            placeholder="Type part of a filename",
+            key="library_filter",
+            on_change=_library_page_reset,
+        )
+        .strip()
+        .lower()
+    )
+    if needle:
+        files = [
+            f
+            for f in files
+            if needle in f["original_name"].lower() or needle in (f["title"] or "").lower()
+        ]
+        if not files:
+            st.caption("No files match that name.")
+            return
+
+    total_pages = max(1, -(-len(files) // LIBRARY_PAGE_SIZE))
+    page = min(max(1, st.session_state.get("library_page", 1)), total_pages)
+    start = (page - 1) * LIBRARY_PAGE_SIZE
+    visible = files[start : start + LIBRARY_PAGE_SIZE]
+
+    opened = st.session_state.get("library_open")
+    for file_row in visible:
+        _render_row(client, file_row, is_open=file_row["id"] == opened)
+
+    if total_pages > 1:
+        previous, indicator, following = st.columns([1, 3, 1])
+        if previous.button(
+            "Previous", disabled=page <= 1, use_container_width=True, key="lib_prev"
         ):
-            if title != file_row["original_name"]:
-                st.caption(file_row["original_name"])
-            _render_file_detail(client, file_row["id"])
+            st.session_state["library_page"] = page - 1
+            st.rerun()
+        indicator.markdown(
+            f"<div style='text-align:center'>Showing {start + 1}-"
+            f"{min(start + LIBRARY_PAGE_SIZE, len(files))} of {len(files)}"
+            f" &nbsp;·&nbsp; page {page} of {total_pages}</div>",
+            unsafe_allow_html=True,
+        )
+        if following.button(
+            "Next", disabled=page >= total_pages, use_container_width=True, key="lib_next"
+        ):
+            st.session_state["library_page"] = page + 1
+            st.rerun()
+
+
+def _render_row(client: ApiClient, file_row: dict[str, Any], is_open: bool) -> None:
+    """One compact row, with details fetched only when it is actually open.
+
+    The previous version put every file in an expander and fetched its full
+    detail inside. Streamlit runs an expander's body whether or not it is
+    expanded, so a library of 80 files made 80 detail requests on every
+    interaction -- each carrying all of that file's passages. The page took
+    seconds to redraw and buttons appeared not to respond.
+    """
+    file_id = file_row["id"]
+    kind = KIND_LABEL.get(file_row["kind"], file_row["kind"])
+    status = STATUS_LABEL.get(file_row["status"], file_row["status"])
+    title = file_row["title"] or file_row["original_name"]
+
+    with st.container(border=True):
+        name, details, open_file, remove = st.columns([6, 1.1, 1.1, 1.1])
+
+        name.markdown(f"**{title}**")
+        summary = (
+            f"{kind} · {status} · {file_row['chunk_count']} passages · "
+            f"{_human_size(file_row['size_bytes'])}"
+        )
+        if title != file_row["original_name"]:
+            summary = f"{file_row['original_name']} — {summary}"
+        name.caption(summary)
+
+        if details.button(
+            "Hide" if is_open else "Details", key=f"details-{file_id}", use_container_width=True
+        ):
+            st.session_state["library_open"] = None if is_open else file_id
+            st.rerun()
+
+        open_file.link_button("Open", client.file_content_url(file_id), use_container_width=True)
+
+        if remove.button("Remove", key=f"delete-{file_id}", use_container_width=True):
+            try:
+                client.delete_file(file_id)
+            except BackendError as exc:
+                st.error(str(exc))
+                return
+            if st.session_state.get("library_open") == file_id:
+                st.session_state["library_open"] = None
+            st.toast(f"Removed {title}")
+            st.rerun()
+
+        if is_open:
+            _render_file_detail(client, file_id)
 
 
 def render(client: ApiClient) -> None:

@@ -30,6 +30,10 @@ class SearchResultOut(BaseModel):
     snippet: str | None
     chunk_id: int | None
     asset_id: int | None
+    # True when the passage was found by literal keyword match on an identifier
+    # rather than by similarity. The UI labels these differently because the
+    # cosine is not what makes them right.
+    exact: bool = False
     supporting: list[SearchResultOut] = []
 
 
@@ -55,7 +59,7 @@ class IndexStatusOut(BaseModel):
     collections: dict[str, int]
     text_dim: int
     image_dim: int
-    image_understanding: bool
+    image_search: bool
 
 
 @router.get("/search", response_model=SearchResponseOut)
@@ -111,5 +115,5 @@ def index_status() -> IndexStatusOut:
         collections=store.counts(),
         text_dim=settings.text_embedding_dim,
         image_dim=settings.clip_embedding_dim,
-        image_understanding=settings.enable_image_understanding,
+        image_search=settings.enable_image_search,
     )

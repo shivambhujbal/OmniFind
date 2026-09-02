@@ -33,12 +33,19 @@ def render(client: ApiClient) -> None:
     top[1].metric("OCR engine", report["ocr_engine"])
     top[2].metric("Captioner", report["captioner"])
 
-    if not report.get("image_understanding", True):
+    if not report.get("image_search", True):
         st.info(
-            "**Image understanding is off.** Documents and scans are fully searchable — "
-            "OCR still reads text out of scanned pages. What is skipped is describing "
-            "pictures and searching them by appearance, which costs several minutes per "
-            "image on a CPU. Set `FS_ENABLE_IMAGE_UNDERSTANDING=true` on a GPU machine."
+            "**Image search is off.** Documents and scans are fully searchable — OCR still "
+            "reads text out of scanned pages. What is skipped is matching pictures by "
+            "appearance. Set `FS_ENABLE_IMAGE_SEARCH=true` to turn it on; it costs about "
+            "two seconds per image on a CPU."
+        )
+    elif not report.get("captioning", True):
+        st.info(
+            "**Image search is on; captioning is off.** Pictures are matched by appearance "
+            "and any text in them is read by OCR. What is skipped is writing a description "
+            "of each one, which costs about 390 seconds per image on a CPU against two "
+            "seconds for the search vector. Set `FS_ENABLE_CAPTIONING=true` on a GPU machine."
         )
     elif report["ready_for_processing"]:
         st.success("All selected engines are installed. Images will be read and captioned.")
