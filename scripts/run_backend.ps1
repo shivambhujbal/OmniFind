@@ -2,7 +2,7 @@
 # Production equivalent: the Tauri shell spawns the PyInstaller exe with --port.
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$python = "C:\Users\shiva\.venvs\fyp\Scripts\python.exe"
+$python = Join-Path $root ".venv\Scripts\python.exe"
 if ($env:FS_VENV_PYTHON) { $python = $env:FS_VENV_PYTHON }
 
 $env:PYTHONPATH = Join-Path $root "sidecar"
