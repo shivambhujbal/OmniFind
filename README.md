@@ -1,13 +1,10 @@
-# Local File Search
+# OmniFind — Local File Search
 
-Search your own PDFs, DOCX files and images by **what is in them**, not by
-filename. Everything runs on your machine: no server, no account, no internet
-connection needed after setup.
+Search your own PDFs, DOCX files and images by **what is in them**, not by filename. Everything runs locally on your machine: no external server, no account, no internet connection needed after initial setup. 100% private and air-gapped.
 
-See [CLAUDE.md](CLAUDE.md) for the architecture and constraints,
-[docs/model-vendoring.md](docs/model-vendoring.md) for how models are made
-offline-safe, and [docs/cpu-fallback-plan.md](docs/cpu-fallback-plan.md) for the
-GPU/CPU seam.
+See [CLAUDE.md](CLAUDE.md) for the architecture and constraints, [docs/model-vendoring.md](docs/model-vendoring.md) for how models are made offline-safe, and [docs/cpu-fallback-plan.md](docs/cpu-fallback-plan.md) for the GPU/CPU seam.
+
+---
 
 ## Status
 
@@ -16,129 +13,119 @@ GPU/CPU seam.
 | 1 | Backend skeleton, `/health`, frontend round trip | **done** |
 | 2 | SQLite schema, filesystem storage, PDF/DOCX/image ingestion | **done** |
 | 3 | ML loaders, embeddings, OCR, captioning, background queue | **done** |
-| 4 | Embedded Qdrant, vector search endpoint | **done** |
-| 5 | Full frontend flow | next |
-| 6 | PyInstaller + Tauri + React, Windows installer | |
+| 4 | Embedded vector store (ChromaDB / Qdrant), vector search endpoint | **done** |
+| 5 | Modern React + TypeScript + Vite Frontend (Stitch Design System) | **done** |
+| 6 | PyInstaller + Tauri shell, Windows installer | next |
 
-The frontend is **Streamlit for now** — a stand-in that exercises the same
-loopback HTTP API the Tauri + React shell will use in phase 6.
+---
+
+## Frontend Architecture
+
+The project now includes a **modern React 19 + TypeScript + Vite** single-page application located in `frontend/`, styled with a custom light-mode design system:
+
+- **Hero Search**: Minimalist centered search interface with global `Ctrl + K` keyboard shortcut.
+- **Search Results View**: Structured result cards with match relevance percentage, highlighted text snippets, image thumbnails, and metadata breadcrumbs.
+- **Indexing Status**: Live background queue tracking, progress bar, document/image processed counters, and local folder scanner.
+- **Right-Hand Sidebar**: Clean navigation panel for Home, Search History, Indexed Folders, Indexing Status, Settings, and About.
+- **System & About Modals**: Live backend inspection of ML hardware device (`cuda` or `cpu`), Python runtime, offline environment verification, and storage breakdown.
+
+The original Streamlit app remains available at `streamlit_app/` as a reference dev harness. Both frontends communicate over the same loopback HTTP API (`http://127.0.0.1:8756`).
+
+---
 
 ### Images on a CPU
 
-Two switches, because the two halves of "image understanding" differ in cost by
-**178x** on this machine:
+Two switches, because the two halves of "image understanding" differ in cost by **178x** on CPU:
 
 | | Cost per image, this CPU | Setting |
 | --- | --- | --- |
 | Match pictures by appearance (CLIP vector) | **2.19 s** | `FS_ENABLE_IMAGE_SEARCH=true` |
 | Describe each picture (moondream2 caption) | **~390 s** | `FS_ENABLE_CAPTIONING=false` |
 
-So image *search* runs here and captioning does not. On a GPU both are about a
-second — turn both on. Files already ingested are picked up automatically when
-either flag changes; there is no re-import.
+Image *search* runs efficiently on CPU; captioning is disabled by default on CPU. On a GPU, both take about a second. Files already ingested are picked up automatically when either flag changes without re-importing.
 
-**OCR is governed by neither.** Reading text out of a scan takes about a second
-with Tesseract, so scanned documents are fully searchable regardless; the sample
-library finds a scanned invoice by its total.
+**OCR is governed by neither.** Reading text out of a scan takes ~1s with Tesseract, so scanned documents are fully searchable regardless.
+
+---
 
 ## Setup
 
-One-time, on a machine with internet:
+### 1. Python Environment (One-time)
 
-```bash
-python -m venv C:\Users\you\.venvs\fyp
+```powershell
+python -m venv .venv
+.\.venv\Scripts\pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+.\.venv\Scripts\pip install -r requirements-dev.txt
 ```
 
-```bash
-C:\Users\you\.venvs\fyp\Scripts\pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-```
+### 2. Vendored Offline Models (~9 GB)
 
-```bash
-C:\Users\you\.venvs\fyp\Scripts\pip install -r requirements-dev.txt
-```
-
-Copy `.env.example` to `.env` and adjust. Then vendor the models (~9 GB, build
-machine only — the app never does this itself):
-
-```bash
+```powershell
 python scripts/download_models.py
-```
-
-```bash
 python scripts/download_models.py --verify
 ```
 
-OCR needs **Tesseract**, which is a separate program rather than a Python
-package:
+### 3. OCR Engine (Tesseract)
 
-```bash
+```powershell
 winget install UB-Mannheim.TesseractOCR
 ```
 
-`config.py` finds it in the standard install locations automatically; set
-`FS_TESSERACT_EXE` if yours is somewhere else.
+### 4. Frontend Node Dependencies
+
+```powershell
+cd frontend
+npm install
+cd ..
+```
+
+---
 
 ## Running
 
-Two terminals. Backend:
+Launch the backend and frontend in separate PowerShell terminals:
 
-```bash
+### 1. Start the Backend API (FastAPI sidecar)
+
+```powershell
 powershell -ExecutionPolicy Bypass -File scripts\run_backend.ps1
 ```
 
-Frontend:
+Runs on `http://127.0.0.1:8756`.
 
-```bash
+### 2. Start the React Frontend (Vite dev server)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run_react_frontend.ps1
+```
+
+Opens at `http://localhost:5173`. Proxies `/api/*` requests directly to the FastAPI sidecar.
+
+*(Optional) Legacy Streamlit frontend:*
+```powershell
 powershell -ExecutionPolicy Bypass -File scripts\run_frontend.ps1
 ```
 
-The Streamlit sidebar shows **Backend connected** once the round trip works.
+---
 
-## Using it
+## Testing & Quality Checks
 
-**Library tab** — paste a folder path and press *Index folder*. The app reports
-how many supported files it found before you commit, then shows a progress bar
-while the queue drains. Subfolders are excluded by default: pointing at
-`Documents` and descending can pull in tens of thousands of files.
+```powershell
+# Python unit tests
+.\.venv\Scripts\python -m pytest -m "not slow"
 
-Your originals are **copied** into the app's store and never moved, renamed or
-deleted — re-indexing the same folder is safe and reports what was already
-known rather than adding it twice. Individual file upload is still there, under
-*Or upload individual files*.
+# Python linting and type checking
+.\.venv\Scripts\python -m ruff check . ; .\.venv\Scripts\python -m mypy sidecar
 
-**Search tab** — describe what you want in your own words. Filter with
-*Everything / Documents / Images*, and page through results ten at a time.
-Each result shows how strong the match is; when even the best hit is weak the
-app says so rather than presenting it as an answer.
-
-## Checks
-
-```bash
-C:\Users\you\.venvs\fyp\Scripts\python -m pytest -m "not slow"
+# Frontend TypeScript check
+cd frontend ; npx tsc --noEmit ; cd ..
 ```
 
-The `slow` tests run real inference against the vendored weights and skip
-automatically when the weights are absent. They take several minutes -- CPU
-captioning is roughly 390s per image -- so they are excluded above. To run
-them:
+---
 
-```bash
-pytest -m slow
-```
+## Where Things Live
 
-```bash
-C:\Users\you\.venvs\fyp\Scripts\python -m ruff check . ; C:\Users\you\.venvs\fyp\Scripts\python -m mypy sidecar
-```
-
-`tests/test_constraints.py` is the executable form of the hard constraints: it
-fails if a device string leaks outside `config.py`/`loaders.py`, if a model is
-constructed outside `ml/loaders.py`, if multi-tenant scaffolding appears, or if
-the backend can be bound to a non-loopback address.
-
-## Where things live
-
-Nothing large is stored in this repo. The app data directory defaults to
-`%LOCALAPPDATA%\FileSearch\`:
+All application data is stored locally in `%LOCALAPPDATA%\FileSearch\`:
 
 ```
 models/          vendored weights (~9 GB)
@@ -146,8 +133,5 @@ files/           originals of ingested files
 derived/         extracted page images, thumbnails
 qdrant/          embedded vector store
 logs/            sidecar.log
-filesearch.db    SQLite
+filesearch.db    SQLite database
 ```
-
-Keep it off OneDrive/Dropbox — syncing a live SQLite file and gigabytes of
-weights is slow and can corrupt the database.
