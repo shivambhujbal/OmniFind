@@ -231,10 +231,23 @@ def load_text_encoder(device: Device | None = None) -> SentenceTransformer:
     )
 
     with _BUILD_LOCK:
+        import torch
         from sentence_transformers import SentenceTransformer
 
         log.info("loading text encoder from %s on %s", path, device)
-        model = SentenceTransformer(str(path), device=device)
+        model_kwargs = {}
+        bin_path = path / "pytorch_model.bin"
+        if bin_path.exists():
+            model_kwargs["use_safetensors"] = False
+
+        try:
+            model = SentenceTransformer(str(path), device=device, model_kwargs=model_kwargs)
+        except (torch.cuda.OutOfMemoryError, Exception) as exc:
+            if str(device).startswith("cuda"):
+                log.warning("Failed to load text encoder on %s (%s). Falling back to CPU.", device, exc)
+                model = SentenceTransformer(str(path), device="cpu", model_kwargs=model_kwargs)
+            else:
+                raise
         model.eval()
 
     log.info("text encoder ready (dim=%d)", model.get_sentence_embedding_dimension())

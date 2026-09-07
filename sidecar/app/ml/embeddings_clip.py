@@ -160,5 +160,14 @@ def embed_query(query: str) -> NDArray[np.float32]:
 
 def embedding_dim() -> int:
     """Actual output width of the loaded CLIP model."""
+    try:
+        config_path = settings.models_dir / "openclip-vit-h14" / "open_clip_config.json"
+        if config_path.exists():
+            import json
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return int(data["model_cfg"]["embed_dim"])
+    except Exception:
+        pass
     model, _, _ = loaders.load_clip()
     return int(model.visual.output_dim)
