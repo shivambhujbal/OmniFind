@@ -532,7 +532,7 @@ export default function LibraryPage() {
   };
 
   return (
-    <div className="fade-in">
+    <div className="page-container fade-in">
       <h1 className="page-title">Library</h1>
       <p className="page-subtitle">
         Manage your indexed files. Point the app at a folder or upload files directly.

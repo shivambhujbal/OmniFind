@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import SettingsModal from './components/SettingsModal';
@@ -9,28 +9,36 @@ import SearchHistoryPage from './pages/SearchHistoryPage';
 import LibraryPage from './pages/LibraryPage';
 import StatusPage from './pages/StatusPage';
 
-export default function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+function AppLayout() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const location = useLocation();
+
+  const isHome = location.pathname === '/' && !location.search;
 
   return (
-    <BrowserRouter>
-      {/* Top Ambient Glow from screenshots */}
+    <>
+      {/* Top Ambient Glow */}
       <div className="ambient-glow" />
 
-      {/* Top Header Bar for brand & hamburger toggle */}
+      {/* Floating Minimalist Header (Takes no layout space) */}
       <header className="top-header">
-        <Link to="/" className="top-brand">
-          <span className="top-brand-title">OmniFind</span>
-        </Link>
+        {!isHome ? (
+          <Link to="/" className="top-brand" title="OmniFind Home">
+            <span className="top-brand-title">OmniFind</span>
+          </Link>
+        ) : (
+          <div /> /* Empty placeholder so hamburger stays on right */
+        )}
+
         <button
           className="menu-toggle-btn"
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          title="Toggle Navigation Menu"
+          title={sidebarOpen ? 'Close Navigation' : 'Open Navigation'}
           aria-label="Toggle navigation menu"
         >
-          <Menu size={20} />
+          <Menu size={22} strokeWidth={1.8} />
         </button>
       </header>
 
@@ -45,7 +53,7 @@ export default function App() {
           </Routes>
         </main>
 
-        {/* Right Navigation Sidebar (Screenshots 1 & 3) */}
+        {/* Right Navigation Sidebar */}
         {sidebarOpen && (
           <Sidebar
             onOpenSettings={() => setSettingsOpen(true)}
@@ -63,6 +71,14 @@ export default function App() {
         isOpen={aboutOpen}
         onClose={() => setAboutOpen(false)}
       />
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppLayout />
     </BrowserRouter>
   );
 }

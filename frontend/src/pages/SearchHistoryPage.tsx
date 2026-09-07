@@ -33,7 +33,7 @@ export default function SearchHistoryPage() {
   };
 
   return (
-    <div style={{ animation: 'fadeIn 0.2s ease-out' }}>
+    <div className="page-container" style={{ animation: 'fadeIn 0.2s ease-out' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
         <h1 className="page-title">Search History</h1>
         {history.length > 0 && (

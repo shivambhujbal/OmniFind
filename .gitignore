@@ -25,3 +25,6 @@ frontend/dist/
 # OS
 Thumbs.db
 desktop.ini
+
+# Test folders
+*_test/

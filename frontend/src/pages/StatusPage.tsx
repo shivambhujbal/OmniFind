@@ -103,7 +103,7 @@ export default function StatusPage() {
   }
 
   return (
-    <div style={{ animation: 'fadeIn 0.2s ease-out' }}>
+    <div className="page-container" style={{ animation: 'fadeIn 0.2s ease-out' }}>
       <h1 className="page-title">Index Your Files</h1>
       <p className="page-subtitle">
         Select a folder to allow OmniFind to index supported files.

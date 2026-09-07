@@ -135,60 +135,82 @@ body {
 .app-layout {
   display: flex;
   min-height: 100vh;
+  width: 100%;
   position: relative;
   background-color: var(--bg-page);
+  overflow-x: hidden;
 }
 
 .main-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: var(--space-xl) var(--space-2xl);
-  overflow-y: auto;
+  width: 100%;
+  min-height: 100vh;
+  padding: 0;
   position: relative;
   z-index: 2;
-  max-width: 1100px;
+  overflow-y: auto;
 }
 
-/* Top Navigation Bar (Mobile / Responsive & Minimalist Views) */
+/* Page container for non-hero content views */
+.page-container {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 72px 24px 48px;
+  box-sizing: border-box;
+}
+
+/* Minimalist Floating Top Header (Consumes 0 document flow height) */
 .top-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  padding: 16px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-md) var(--space-2xl);
-  position: relative;
-  z-index: 10;
+  pointer-events: none;
+  z-index: 50;
+  box-sizing: border-box;
 }
 
 .top-brand {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 10px;
   text-decoration: none;
   color: var(--text-primary);
+  pointer-events: auto;
 }
 
 .top-brand-title {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
+/* Minimalist Hamburger Button */
 .menu-toggle-btn {
-  background: none;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
   padding: 6px;
   cursor: pointer;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: auto;
+  margin-left: auto;
   transition: all 0.15s ease;
 }
 
 .menu-toggle-btn:hover {
-  background-color: var(--bg-surface);
+  background-color: rgba(0, 0, 0, 0.05);
   color: var(--text-primary);
 }
 
@@ -201,8 +223,14 @@ body {
   border-left: 1px solid var(--border-default);
   display: flex;
   flex-direction: column;
-  padding: var(--space-xl) var(--space-md);
-  z-index: 20;
+  padding: 60px 16px 24px;
+  z-index: 40;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  overflow-y: auto;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .sidebar-header {
@@ -323,11 +351,13 @@ body {
   align-items: center;
   justify-content: center;
   flex: 1;
-  min-height: 60vh;
+  min-height: 100vh;
   text-align: center;
-  max-width: 680px;
+  max-width: 660px;
   margin: 0 auto;
+  padding: 32px 20px;
   width: 100%;
+  box-sizing: border-box;
   animation: fadeIn 0.3s ease-out;
 }
 

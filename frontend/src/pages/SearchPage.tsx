@@ -148,7 +148,7 @@ export default function SearchPage() {
   // 1. SEARCH RESULTS VIEW (when search was executed or response exists)
   if (hasSearched || response) {
     return (
-      <div style={{ animation: 'fadeIn 0.2s ease-out' }}>
+      <div className="page-container" style={{ animation: 'fadeIn 0.2s ease-out' }}>
         {/* Top Search Bar */}
         <form onSubmit={handleSubmit} style={{ maxWidth: '640px' }}>
           <div className="search-pill-bar">
