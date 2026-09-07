@@ -217,6 +217,26 @@ class Settings(BaseSettings):
             raise ValueError(f"Refusing to bind sidecar to {v!r}: this backend is loopback-only.")
         return v
 
+    @field_validator("ml_device")
+    @classmethod
+    def validate_ml_device(cls, v: Device) -> Device:
+        """Gracefully fall back to CPU if CUDA is requested but torch has no CUDA support."""
+        if v == "cuda":
+            try:
+                import torch
+
+                if not torch.cuda.is_available():
+                    import logging
+
+                    logging.getLogger("app.config").warning(
+                        "CUDA device requested (FS_ML_DEVICE=cuda), but PyTorch was installed without CUDA support. "
+                        "Automatically falling back to CPU."
+                    )
+                    return "cpu"
+            except Exception:
+                return "cpu"
+        return v
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def models_dir(self) -> Path:
