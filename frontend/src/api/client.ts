@@ -53,10 +53,15 @@ async function request<T>(
   if (!response.ok) {
     let detail: string;
     try {
-      const body = await response.json();
-      detail = body.detail ?? JSON.stringify(body);
+      const text = await response.text();
+      try {
+        const body = JSON.parse(text);
+        detail = body.detail ?? (typeof body === 'string' ? body : JSON.stringify(body));
+      } catch {
+        detail = text || response.statusText;
+      }
     } catch {
-      detail = await response.text();
+      detail = response.statusText || 'Unknown server error';
     }
     throw new BackendError(`${response.status}: ${detail}`, response.status);
   }

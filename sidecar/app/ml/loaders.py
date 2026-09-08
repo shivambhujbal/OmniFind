@@ -286,7 +286,26 @@ def load_clip(device: Device | None = None) -> tuple[Any, Any, Any]:
         identifier = f"local-dir:{path}"
         log.info("loading OpenCLIP from %s on %s", identifier, device)
 
-        model, preprocess = _build_clip_low_memory(open_clip, identifier, path, device)
+        try:
+            model, preprocess = _build_clip_low_memory(open_clip, identifier, path, device)
+        except (OSError, MemoryError, Exception) as exc:
+            if str(device).startswith("cuda"):
+                log.warning("OpenCLIP failed to load on %s (%s). Falling back to CPU...", device, exc)
+                try:
+                    model, preprocess = _build_clip_low_memory(open_clip, identifier, path, "cpu")
+                except Exception as inner:
+                    raise ModelNotAvailableError(
+                        "OpenCLIP model",
+                        path,
+                        f"Unable to load OpenCLIP model due to memory limits: {inner}. Text search continues to work normally.",
+                    ) from inner
+            else:
+                raise ModelNotAvailableError(
+                    "OpenCLIP model",
+                    path,
+                    f"Unable to load OpenCLIP model due to memory limits: {exc}. Text search continues to work normally.",
+                ) from exc
+
         model.eval()
         tokenizer = open_clip.get_tokenizer(identifier)
 
@@ -323,6 +342,8 @@ def _build_clip_low_memory(
             identifier, device="meta", load_weights=False
         )
 
+    _check_windows_memory_for_checkpoint(checkpoint)
+
     with safe_open(str(checkpoint), framework="pt") as handle:
         available = set(handle.keys())
         for name, _ in list(model.named_parameters()) + list(model.named_buffers()):
@@ -331,6 +352,39 @@ def _build_clip_low_memory(
 
     _materialise_non_persistent_buffers(model, device)
     return model, preprocess
+
+
+def _check_windows_memory_for_checkpoint(checkpoint: Path) -> None:
+    """Ensure Windows has sufficient commit charge (paging file) to map the weights file."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+    class MEMORYSTATUSEX(ctypes.Structure):
+        _fields_ = [
+            ("dwLength", ctypes.c_ulong),
+            ("dwMemoryLoad", ctypes.c_ulong),
+            ("ullTotalPhys", ctypes.c_ulonglong),
+            ("ullAvailPhys", ctypes.c_ulonglong),
+            ("ullTotalPageFile", ctypes.c_ulonglong),
+            ("ullAvailPageFile", ctypes.c_ulonglong),
+            ("ullTotalVirtual", ctypes.c_ulonglong),
+            ("ullAvailVirtual", ctypes.c_ulonglong),
+            ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+        ]
+    stat = MEMORYSTATUSEX()
+    stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+    ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))
+    file_size = checkpoint.stat().st_size
+    required_bytes = file_size + 300 * 1024 * 1024
+    if stat.ullAvailPageFile < required_bytes:
+        avail_mb = round(stat.ullAvailPageFile / (1024 * 1024))
+        req_mb = round(required_bytes / (1024 * 1024))
+        raise ModelNotAvailableError(
+            "OpenCLIP model",
+            checkpoint.parent,
+            f"Insufficient Windows commit memory ({avail_mb}MB available, ~{req_mb}MB required) to map {checkpoint.name}. "
+            "Please increase Windows paging file size to enable image search.",
+        )
 
 
 def _find_clip_checkpoint(path: Path) -> Path:

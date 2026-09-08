@@ -117,7 +117,7 @@ def search(
             searched_images = True
         except loaders.ModelBusyError:
             log.info("skipping image search: models busy with background processing")
-        except loaders.ModelNotAvailableError as exc:
+        except (loaders.ModelNotAvailableError, Exception) as exc:
             # Text results are still worth returning: degrade, do not fail.
             log.warning("image search unavailable: %s", exc)
 
